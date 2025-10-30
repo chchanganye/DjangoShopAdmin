@@ -23,4 +23,32 @@ urlpatterns = (
 
     # 获取主页
     url(r'(/)?$', views.index),
+
+    # 商品分类
+    url(r'^api/categories/?$', views.categories_list),
+
+    # 用户信息
+    url(r'^api/users/?$', views.users_list),
+
+    # 商户信息
+    url(r'^api/merchants/?$', views.merchants_list),
+
+    # 物业信息
+    url(r'^api/properties/?$', views.properties_list),
+
+    # 业主信息（按物业ID）
+    url(r'^api/owners/by_property/(?P<property_id>[^/]+)/?$', views.owners_by_property),
+
+    # 积分阈值查询
+    url(r'^api/thresholds/(?P<property_id>[^/]+)/?$', views.threshold_query),
+
+    # 管理员-积分阈值CRUD
+    url(r'^api/admin/thresholds/?$', views.admin_threshold_create),            # POST
+    url(r'^api/admin/thresholds/(?P<property_id>[^/]+)/?$', views.admin_threshold_update),  # PUT/DELETE
+
+    # 积分变更示例
+    url(r'^api/points/change/?$', views.points_change),
+
+    # 管理员-接口权限管理
+    url(r'^api/admin/permissions/?$', views.admin_api_permissions),  # GET/POST
 )
