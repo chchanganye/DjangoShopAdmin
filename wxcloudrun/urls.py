@@ -55,4 +55,9 @@ urlpatterns = (
 
     # 管理员-接口权限管理
     url(r'^api/admin/permissions/?$', views.admin_api_permissions),  # GET/POST
+
+    # 认证与登录
+    url(r'^api/auth/code2session/?$', views.auth_code2session),
+    url(r'^api/auth/check_session/?$', views.auth_check_session),
+    url(r'^api/admin/wechat/access_token/?$', views.admin_wechat_access_token),
 )
