@@ -29,9 +29,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'wxcloudrun',
-    'rest_framework',
-    'rest_framework.authtoken'
+    'wxcloudrun'
 ]
 
 MIDDLEWARE = [
@@ -193,12 +191,3 @@ STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGS_DIR = '/data/logs/'
-
-# WeChat Mini Program credentials from environment variables
-WX_APP_ID = os.environ.get('APP_ID')
-WX_APP_SECRET = os.environ.get('APP_SECRET')
-
-# Simple guard logging for missing credentials (optional; no crash)
-if not WX_APP_ID or not WX_APP_SECRET:
-    import logging
-    logging.getLogger('log').warning('WX_APP_ID/WX_APP_SECRET not found in environment. WeChat access token retrieval will fail.')

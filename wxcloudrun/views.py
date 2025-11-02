@@ -1,17 +1,10 @@
 import json
 import logging
 from datetime import date
-import time
-import hmac
-import hashlib
 
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
-from django.conf import settings
-
-from rest_framework.authtoken.models import Token
-import requests
 
 from wxcloudrun.models import (
     Counters,
@@ -83,51 +76,15 @@ def _get_user_by_openid(openid):
         return None
 
 
-def _parse_auth_token(request):
-    """
-    从 Authorization 头中提取 DRF Token，支持以下格式：
-    - Authorization: Token <key>
-    - Authorization: Bearer <key>
-    返回 (token_key 或 None)
-    """
-    header = request.META.get('HTTP_AUTHORIZATION') or request.headers.get('Authorization')
-    if not header:
-        return None
-    parts = header.split()
-    if len(parts) == 2 and parts[0].lower() in ('token', 'bearer'):
-        return parts[1].strip()
-    # 兼容纯 key
-    if len(parts) == 1:
-        return parts[0].strip()
-    return None
-
-
-def _get_user_by_token(request):
-    """通过 Authorization 头中的 Token 获取业务用户(UserInfo)。"""
-    token_key = _parse_auth_token(request)
-    if not token_key:
-        return None, '缺少或格式错误的 Authorization 头'
-    try:
-        t = Token.objects.get(key=token_key)
-    except Token.DoesNotExist:
-        return None, '无效的Token'
-    # 使用 Django auth.User 的 username 作为 openid 映射
-    openid = t.user.username
-    user = _get_user_by_openid(openid)
-    if not user:
-        return None, '关联的用户不存在'
-    if not user.wx_session_key:
-        return None, '用户登录态无效，请重新登录'
-    return user, None
-
-
 def permission_required(endpoint_name):
     def decorator(view_func):
         def _wrapped(request, *args, **kwargs):
-            # 优先通过 Authorization Token 鉴权
-            user, err = _get_user_by_token(request)
-            if err:
-                return json_err(err, status=401)
+            openid = _get_openid(request)
+            if not openid:
+                return json_err('缺少openid', status=401)
+            user = _get_user_by_openid(openid)
+            if not user:
+                return json_err('用户不存在，请先注册', status=401)
 
             # 管理员拥有所有权限
             if user.identity_type == 'ADMIN':
@@ -381,142 +338,6 @@ def admin_api_permissions(request, user):
             'method': obj.method,
             'allowed_identities': obj.allowed_list(),
         }, status=201)
-
-
-# ---------------------- 8. 微信登录与会话校验 ----------------------
-
-def _wechat_access_token():
-    """获取并缓存微信 access_token（后端内部使用）。"""
-    cache = getattr(_wechat_access_token, '_cache', {'token': None, 'expires_at': 0})
-    now = time.time()
-    if cache['token'] and now < cache['expires_at'] - 300:
-        return cache['token']
-    if not settings.WX_APP_ID or not settings.WX_APP_SECRET:
-        logger.error('缺少 APP_ID/APP_SECRET 环境变量，无法获取微信 access_token')
-        return None
-    try:
-        resp = requests.get(
-            'https://api.weixin.qq.com/cgi-bin/token',
-            params={'grant_type': 'client_credential', 'appid': settings.WX_APP_ID, 'secret': settings.WX_APP_SECRET},
-            timeout=8,
-        )
-        data = resp.json()
-    except Exception as e:
-        logger.error(f'调用微信获取access_token失败: {e}')
-        return None
-    if 'access_token' in data:
-        token = data['access_token']
-        expires_in = int(data.get('expires_in', 7200))
-        cache = {'token': token, 'expires_at': now + expires_in}
-        setattr(_wechat_access_token, '_cache', cache)
-        return token
-    else:
-        logger.error(f'微信返回错误: {data}')
-        return None
-
-
-def _wechat_code2session(js_code: str):
-    if not settings.WX_APP_ID or not settings.WX_APP_SECRET:
-        return None, None, {'errcode': -1, 'errmsg': '缺少APP_ID/APP_SECRET环境变量'}
-    try:
-        resp = requests.get(
-            'https://api.weixin.qq.com/sns/jscode2session',
-            params={
-                'appid': settings.WX_APP_ID,
-                'secret': settings.WX_APP_SECRET,
-                'js_code': js_code,
-                'grant_type': 'authorization_code'
-            },
-            timeout=8,
-        )
-        data = resp.json()
-    except Exception as e:
-        return None, None, {'errcode': -1, 'errmsg': f'网络错误: {e}'}
-    if 'openid' in data and 'session_key' in data:
-        return data['openid'], data['session_key'], None
-    return None, None, data
-
-
-@require_http_methods(["POST"])
-def auth_code2session(request):
-    """
-    前端使用 wx.login 获取 code 后调用此接口。
-    成功时返回 {token, token_type: 'Token', openid}
-    """
-    try:
-        body = json.loads(request.body.decode('utf-8'))
-    except Exception:
-        return json_err('请求体格式错误', status=400)
-    js_code = body.get('code') or body.get('js_code')
-    if not js_code:
-        return json_err('缺少参数 code', status=400)
-
-    openid, session_key, err = _wechat_code2session(js_code)
-    if err:
-        # 直接透传微信错误
-        return json_err(f"微信接口错误: {err.get('errmsg', '未知错误')}", code=err.get('errcode', -1), status=400)
-
-    # 建立/更新业务用户
-    user = _get_user_by_openid(openid)
-    if not user:
-        # 默认身份设为业主，可根据业务自行调整
-        user = UserInfo(openid=openid, identity_type='OWNER')
-    user.wx_session_key = session_key
-    user.save()
-
-    # 建立/获取 Django auth 用户 + DRF Token
-    from django.contrib.auth.models import User as AuthUser
-    auth_user, created = AuthUser.objects.get_or_create(username=openid, defaults={'is_active': True})
-    if created:
-        auth_user.set_unusable_password()
-        auth_user.save()
-    token, _ = Token.objects.get_or_create(user=auth_user)
-
-    return json_ok({'token': token.key, 'token_type': 'Token', 'openid': openid})
-
-
-@require_http_methods(["GET"])
-def auth_check_session(request):
-    """校验服务器保存的 session_key 是否有效。"""
-    user, err = _get_user_by_token(request)
-    if err:
-        return json_err(err, status=401)
-    access_token = _wechat_access_token()
-    if not access_token:
-        return json_err('获取access_token失败', status=500)
-    # 计算签名: signature = hmac_sha256(session_key, "")
-    signature = hmac.new(key=user.wx_session_key.encode('utf-8'), msg=b'', digestmod=hashlib.sha256).hexdigest()
-    try:
-        resp = requests.get(
-            'https://api.weixin.qq.com/wxa/checksession',
-            params={
-                'access_token': access_token,
-                'signature': signature,
-                'openid': user.openid,
-                'sig_method': 'hmac_sha256'
-            },
-            timeout=8,
-        )
-        data = resp.json()
-    except Exception as e:
-        return json_err(f'网络错误: {e}', status=400)
-    if int(data.get('errcode', -1)) == 0:
-        return json_ok({'valid': True, 'errmsg': data.get('errmsg', 'ok')})
-    return json_err(data.get('errmsg', 'invalid'), code=data.get('errcode', 87009), status=400)
-
-
-@require_http_methods(["GET"])
-def admin_wechat_access_token(request):
-    """仅管理员查看当前 access_token（便于排查）。"""
-    user, err = _get_user_by_token(request)
-    if err:
-        return json_err(err, status=401)
-    if user.identity_type != 'ADMIN':
-        return json_err('没有权限访问此接口', status=403)
-    token = _wechat_access_token()
-    if not token:
-        return json_err('获取access_token失败', status=500)
-    return json_ok({'access_token': token})
 
 
 

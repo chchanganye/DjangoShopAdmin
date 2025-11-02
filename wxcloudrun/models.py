@@ -75,7 +75,6 @@ def _generate_seq(prefix: str, model_cls, field_name: str, width: int = 3):
 class UserInfo(models.Model):
     system_id = models.CharField('系统编号', max_length=32, unique=True)  # 身份前缀+序列号，如 OWNER_001
     openid = models.CharField('OpenID', max_length=128, unique=True)
-    wx_session_key = models.CharField('微信Session Key', max_length=256, blank=True, default='')
     avatar_url = models.CharField('头像URL', max_length=512, blank=True, default='')
     phone_number = models.CharField('手机号', max_length=32, blank=True, default='')
     identity_type = models.CharField('身份类型', max_length=20, choices=IDENTITY_CHOICES)
