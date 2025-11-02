@@ -63,10 +63,8 @@ def json_err(message='错误', code=-1, status=400):
 
 
 def _get_openid(request):
-    # 微信云托管会在header中传递 openid
-    # Django会将请求头转为META中的 HTTP_ 前缀
-    openid = request.META.get('HTTP_X_WX_OPENID') or request.META.get('X-WX-OPENID')
-    return openid
+    """仅从 request.headers 读取微信云托管注入的 OpenID，不做任何回退或兼容逻辑。"""
+    return request.headers.get('X-WX-OPENID')
 
 
 def _get_user_by_openid(openid):
@@ -104,6 +102,18 @@ def permission_required(endpoint_name):
     return decorator
 
 
+def openid_required(view_func):
+    """仅校验 OpenID 是否存在，存在则放行。不做身份或权限校验。
+    适用于小程序通过 wx.cloud.callContainer 自动注入请求头的场景。
+    """
+    def _wrapped(request, *args, **kwargs):
+        openid = _get_openid(request)
+        if not openid:
+            return json_err('缺少openid', status=401)
+        return view_func(request, *args, **kwargs)
+    return _wrapped
+
+
 def _ensure_daily_reset(user: UserInfo):
     today = date.today()
     if user.daily_points_date != today:
@@ -123,9 +133,9 @@ def change_user_points(user: UserInfo, delta: int):
 
 # ---------------------- 1. 商品分类管理接口 ----------------------
 
-@permission_required('categories_list')
+@openid_required
 @require_http_methods(["GET"])
-def categories_list(request, user):
+def categories_list(request):
     qs = Category.objects.all().order_by('id')
     items = [{'name': c.name, 'icon_name': c.icon_name} for c in qs]
     return json_ok({'total': qs.count(), 'list': items})
@@ -154,9 +164,9 @@ def users_list(request, user):
 
 # ---------------------- 3. 商户信息专用接口 ----------------------
 
-@permission_required('merchants_list')
+@openid_required
 @require_http_methods(["GET"])
-def merchants_list(request, user):
+def merchants_list(request):
     qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
     items = []
     for m in qs:
@@ -176,9 +186,9 @@ def merchants_list(request, user):
 
 # ---------------------- 4. 物业信息专用接口 ----------------------
 
-@permission_required('properties_list')
+@openid_required
 @require_http_methods(["GET"])
-def properties_list(request, user):
+def properties_list(request):
     qs = PropertyProfile.objects.select_related('user').all().order_by('id')
     items = []
     for p in qs:
@@ -193,9 +203,9 @@ def properties_list(request, user):
 
 # ---------------------- 5. 业主信息查询接口（按物业ID） ----------------------
 
-@permission_required('owners_by_property')
+@openid_required
 @require_http_methods(["GET"])
-def owners_by_property(request, user, property_id):
+def owners_by_property(request, property_id):
     try:
         prop = PropertyProfile.objects.get(property_id=property_id)
     except PropertyProfile.DoesNotExist:
@@ -218,9 +228,9 @@ def owners_by_property(request, user, property_id):
 
 # ---------------------- 6. 积分阈值管理系统 ----------------------
 
-@permission_required('threshold_query')
+@openid_required
 @require_http_methods(["GET"])
-def threshold_query(request, user, property_id):
+def threshold_query(request, property_id):
     try:
         prop = PropertyProfile.objects.get(property_id=property_id)
     except PropertyProfile.DoesNotExist:
