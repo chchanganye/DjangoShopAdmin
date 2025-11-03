@@ -5,6 +5,8 @@ from datetime import date
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
+from django.contrib.auth import authenticate
+from django.contrib.auth.models import User
 
 from wxcloudrun.models import (
     Category,
@@ -13,14 +15,14 @@ from wxcloudrun.models import (
     PropertyProfile,
     PointsThreshold,
     PointsRecord,
-    ApiPermission,
 )
+from rest_framework.authtoken.models import Token
 
 
 logger = logging.getLogger('log')
 
 
-def index(request, _):
+def index(request):
     """
     获取主页
 
@@ -38,12 +40,12 @@ def index(request, _):
 def json_ok(data=None, status=200, message='success'):
     """统一成功响应结构
     - code: 业务状态码，默认等于 HTTP 状态码（200/201/204等）
-    - message: 人类可读提示，默认 'success'
+    - msg: 人类可读提示，默认 'success'
     - data: 成功时返回的数据；若传入 None，返回空对象 {}
     """
     payload = {
         'code': status,
-        'message': message,
+        'msg': message,
         'data': {} if data is None else data,
     }
     return JsonResponse(payload, status=status, json_dumps_params={'ensure_ascii': False})
@@ -52,12 +54,12 @@ def json_ok(data=None, status=200, message='success'):
 def json_err(message='错误', code=None, status=400):
     """统一错误响应结构
     - code: 业务状态码，默认等于 HTTP 状态码（400/401/403/404/500等）
-    - message: 错误信息
+    - msg: 错误信息
     - data: 错误时固定为 None
     """
     payload = {
         'code': code or status,
-        'message': message,
+        'msg': message,
         'data': None,
     }
     return JsonResponse(payload, status=status, json_dumps_params={'ensure_ascii': False})
@@ -68,39 +70,41 @@ def _get_openid(request):
     return request.headers.get('X-WX-OPENID')
 
 
-def _get_user_by_openid(openid):
-    try:
-        return UserInfo.objects.get(openid=openid)
-    except UserInfo.DoesNotExist:
+def _parse_auth_header(request):
+    """从 Authorization 头中解析出可能的 Token 值。
+    支持格式：
+      - Authorization: Token <key>
+      - Authorization: Bearer <key>
+      - Authorization: token <key>
+    返回 token_key 或 None。
+    """
+    auth = request.headers.get('Authorization') or request.META.get('HTTP_AUTHORIZATION')
+    if not auth:
         return None
+    parts = auth.strip().split()
+    if len(parts) == 2 and parts[0].lower() in ('token', 'bearer'):
+        return parts[1]
+    # 仅有纯token的情况
+    if len(parts) == 1:
+        return parts[0]
+    return None
 
 
-def permission_required(endpoint_name):
-    def decorator(view_func):
-        def _wrapped(request, *args, **kwargs):
-            openid = _get_openid(request)
-            if not openid:
-                return json_err('缺少openid', status=401)
-            user = _get_user_by_openid(openid)
-            if not user:
-                return json_err('用户不存在，请先注册', status=401)
-
-            # 管理员拥有所有权限
-            if user.identity_type == 'ADMIN':
-                return view_func(request, user=user, *args, **kwargs)
-
-            method = request.method.upper()
-            try:
-                perm = ApiPermission.objects.get(endpoint_name=endpoint_name, method=method)
-                allowed = perm.allowed_list()
-            except ApiPermission.DoesNotExist:
-                allowed = ['OWNER', 'PROPERTY', 'MERCHANT', 'ADMIN']
-
-            if user.identity_type not in allowed:
-                return json_err('没有权限访问此接口', status=403)
-            return view_func(request, user=user, *args, **kwargs)
-        return _wrapped
-    return decorator
+def _get_admin_from_token(request):
+    """校验 Authorization Token 并返回 Django 用户（仅限管理员）。
+    仅当 user.is_superuser 为真时视为管理员。验证失败返回 None。
+    """
+    token_key = _parse_auth_header(request)
+    if not token_key:
+        return None
+    try:
+        token = Token.objects.select_related('user').get(key=token_key)
+        user = token.user
+        if user and user.is_superuser:
+            return user
+        return None
+    except Token.DoesNotExist:
+        return None
 
 
 def openid_required(view_func):
@@ -108,10 +112,25 @@ def openid_required(view_func):
     适用于小程序通过 wx.cloud.callContainer 自动注入请求头的场景。
     """
     def _wrapped(request, *args, **kwargs):
+        # 管理员Token优先直通
+        admin = _get_admin_from_token(request)
+        if admin:
+            return view_func(request, *args, **kwargs)
+
         openid = _get_openid(request)
         if not openid:
             return json_err('缺少openid', status=401)
         return view_func(request, *args, **kwargs)
+    return _wrapped
+
+
+def admin_token_required(view_func):
+    """仅允许持有有效管理员 Token 的请求通过。"""
+    def _wrapped(request, *args, **kwargs):
+        admin = _get_admin_from_token(request)
+        if not admin:
+            return json_err('未认证或无权限', status=401)
+        return view_func(request, admin=admin, *args, **kwargs)
     return _wrapped
 
 
@@ -144,9 +163,9 @@ def categories_list(request):
 
 # ---------------------- 2. 用户信息管理接口 ----------------------
 
-@permission_required('users_list')
+@admin_token_required
 @require_http_methods(["GET"])
-def users_list(request, user):
+def users_list(request, admin):
     qs = UserInfo.objects.select_related('owner_property').all().order_by('id')
     def to_dict(u: UserInfo):
         return {
@@ -245,9 +264,9 @@ def threshold_query(request, property_id):
 
 
 # 管理员配置接口（阈值CRUD）
-@permission_required('admin_threshold_create')
+@admin_token_required
 @require_http_methods(["POST"])
-def admin_threshold_create(request, user):
+def admin_threshold_create(request, admin):
     # 仅管理员能访问（装饰器已允许管理员直通），其他身份需在权限表中放行
     try:
         body = json.loads(request.body.decode('utf-8'))
@@ -265,9 +284,9 @@ def admin_threshold_create(request, user):
     return json_ok({'property_id': prop.property_id, 'min_points': th.min_points}, status=201)
 
 
-@permission_required('admin_threshold_update')
+@admin_token_required
 @require_http_methods(["PUT", "DELETE"])
-def admin_threshold_update(request, user, property_id):
+def admin_threshold_update(request, admin, property_id):
     try:
         prop = PropertyProfile.objects.get(property_id=property_id)
     except PropertyProfile.DoesNotExist:
@@ -294,10 +313,10 @@ def admin_threshold_update(request, user, property_id):
 
 # ---------------------- 7. 积分统计逻辑（示例接口：变更积分） ----------------------
 
-@permission_required('points_change')
+@admin_token_required
 @require_http_methods(["POST"])
-def points_change(request, user):
-    # 对当前请求用户的积分进行变更（正负皆可），用于演示每日清零+历史累计
+def points_change(request, admin):
+    # 管理员对指定用户的积分进行变更（正负皆可），用于演示每日清零+历史累计
     try:
         body = json.loads(request.body.decode('utf-8'))
     except Exception:
@@ -305,7 +324,22 @@ def points_change(request, user):
     delta = body.get('delta')
     if delta is None:
         return json_err('缺少参数 delta', status=400)
-    updated_user = change_user_points(user, int(delta))
+    
+    # 管理员必须指定目标用户
+    target_openid = body.get('target_openid')
+    target_system_id = body.get('target_system_id')
+    if not target_openid and not target_system_id:
+        return json_err('需提供 target_openid 或 target_system_id', status=400)
+    
+    try:
+        if target_openid:
+            target_user = UserInfo.objects.get(openid=target_openid)
+        else:
+            target_user = UserInfo.objects.get(system_id=target_system_id)
+    except UserInfo.DoesNotExist:
+        return json_err('目标用户不存在', status=404)
+
+    updated_user = change_user_points(target_user, int(delta))
     return json_ok({
         'system_id': updated_user.system_id,
         'daily_points': updated_user.daily_points,
@@ -313,42 +347,46 @@ def points_change(request, user):
     })
 
 
-# ---------------------- 接口权限配置（管理员可管理） ----------------------
+# ---------------------- 8. 管理员账号登录（Token 认证） ----------------------
 
-@permission_required('admin_api_permissions')
-@require_http_methods(["GET", "POST"])
-def admin_api_permissions(request, user):
-    if request.method.upper() == 'GET':
-        qs = ApiPermission.objects.all().order_by('endpoint_name', 'method')
-        data = [{
-            'endpoint_name': p.endpoint_name,
-            'method': p.method,
-            'allowed_identities': p.allowed_list(),
-        } for p in qs]
-        return json_ok({'total': qs.count(), 'list': data})
-    else:
-        try:
-            body = json.loads(request.body.decode('utf-8'))
-        except Exception:
-            return json_err('请求体格式错误', status=400)
-        endpoint_name = body.get('endpoint_name')
-        method = body.get('method', 'GET').upper()
-        allowed = body.get('allowed_identities')
-        if not endpoint_name or not allowed:
-            return json_err('缺少参数 endpoint_name 或 allowed_identities', status=400)
-        if isinstance(allowed, list):
-            allowed_str = ','.join(allowed)
-        else:
-            allowed_str = str(allowed)
-        obj, _ = ApiPermission.objects.update_or_create(
-            endpoint_name=endpoint_name, method=method,
-            defaults={'allowed_identities': allowed_str}
-        )
-        return json_ok({
-            'endpoint_name': obj.endpoint_name,
-            'method': obj.method,
-            'allowed_identities': obj.allowed_list(),
-        }, status=201)
+
+@require_http_methods(["POST"])
+def admin_login(request):
+    """管理员登录，返回Token。
+    请求体示例：{"username":"admin","password":"123456"}
+    """
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    username = body.get('username')
+    password = body.get('password')
+    if not username or not password:
+        return json_err('缺少参数 username 或 password', status=400)
+    user = authenticate(username=username, password=password)
+    if not user:
+        return json_err('用户名或密码错误', status=401)
+    # 仅允许超级用户获取管理员Token
+    if not user.is_superuser:
+        return json_err('仅允许超级用户登录', status=403)
+    token, _ = Token.objects.get_or_create(user=user)
+    return json_ok({'token': token.key, 'username': username})
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_me(request, admin):
+    """获取当前管理员信息。"""
+    return json_ok({
+        'username': admin.username,
+        'is_superuser': admin.is_superuser,
+        'roles': ['admin'] if admin.is_superuser else [],
+        'buttons': [],
+        'email': admin.email or '',
+        'avatar': '',
+        'userId': admin.id,
+        'userName': admin.username,
+    })
 
 
 

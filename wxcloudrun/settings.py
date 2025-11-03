@@ -23,14 +23,16 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
-    'simpleui',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'wxcloudrun'
+    'wxcloudrun',
+    # DRF & Token 认证
+    'rest_framework',
+    'rest_framework.authtoken',
 ]
 
 MIDDLEWARE = [
@@ -197,10 +199,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGS_DIR = '/data/logs/'
 
-# 项目源代码中的静态资源目录（开发/构建产物）
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, "static"),
-]
 
-# collectstatic 的输出目录（用于部署/生产静态文件收集），不得与 STATICFILES_DIRS 相同
-STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+# ------------------- DRF 配置（后续如迁移到DRF视图可直接使用） -------------------
+REST_FRAMEWORK = {
+    # 默认开启 Token 认证，以便未来迁移到 DRF 视图
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}

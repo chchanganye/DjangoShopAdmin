@@ -53,6 +53,7 @@ urlpatterns = (
     # 积分变更示例
     url(r'^api/points/change/?$', views.points_change),
 
-    # 管理员-接口权限管理
-    url(r'^api/admin/permissions/?$', views.admin_api_permissions),  # GET/POST
+    # 管理员认证相关
+    url(r'^api/admin/auth/login/?$', views.admin_login),        # POST
+    url(r'^api/admin/auth/me/?$', views.admin_me),              # GET
 )
