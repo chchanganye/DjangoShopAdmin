@@ -3,7 +3,6 @@ import logging
 from datetime import date
 
 from django.http import JsonResponse
-from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
@@ -20,19 +19,7 @@ from rest_framework.authtoken.models import Token
 
 
 logger = logging.getLogger('log')
-
-
-def index(request):
-    """
-    获取主页
-
-     `` request `` 请求对象
-    """
-
-    return render(request, 'index.html')
-
-
-# 已移除官方示例计数器接口（与本项目无关）
+# 已移除官方示例计数器接口和 index 页面（本项目为纯 API 后端）
 
 
 # ---------------------- 通用工具与权限管理 ----------------------
@@ -187,21 +174,27 @@ def users_list(request, admin):
 @openid_required
 @require_http_methods(["GET"])
 def merchants_list(request):
-    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
-    items = []
-    for m in qs:
-        items.append({
-            'description': m.description,
-            'banner_urls': m.banner_list(),
-            'category': m.category.name if m.category else None,
-            'contact_phone': m.contact_phone,
-            'merchant_name': m.merchant_name,
-            'title': m.title,
-            'address': m.address,
-            'positive_rating_percent': m.positive_rating_percent,
-            'merchant_id': m.merchant_id,
-        })
-    return json_ok({'total': qs.count(), 'list': items})
+    try:
+        # 查询所有商户，即使没有关联 user 也返回
+        qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+        items = []
+        for m in qs:
+            items.append({
+                'description': m.description,
+                'banner_urls': m.banner_list(),
+                'category': m.category.name if m.category else None,
+                'contact_phone': m.contact_phone,
+                'merchant_name': m.merchant_name,
+                'title': m.title,
+                'address': m.address,
+                'positive_rating_percent': m.positive_rating_percent,
+                'merchant_id': m.merchant_id,
+            })
+        logger.info(f'查询商户列表，共 {len(items)} 条')
+        return json_ok({'total': len(items), 'list': items})
+    except Exception as e:
+        logger.error(f'查询商户列表失败: {str(e)}', exc_info=True)
+        return json_err(f'查询失败: {str(e)}', status=500)
 
 
 # ---------------------- 4. 物业信息专用接口 ----------------------
@@ -380,7 +373,8 @@ def admin_me(request, admin):
     return json_ok({
         'username': admin.username,
         'is_superuser': admin.is_superuser,
-        'roles': ['admin'] if admin.is_superuser else [],
+        # 返回前端预期的角色标识
+        'roles': ['R_SUPER'] if admin.is_superuser else ['R_ADMIN'],
         'buttons': [],
         'email': admin.email or '',
         'avatar': '',
@@ -388,6 +382,3 @@ def admin_me(request, admin):
         'userName': admin.username,
     })
 
-
-
-# 注：若需要保留演示页面，可在 templates/index.html 中展示静态内容或自定义引导，无需后端计数接口。

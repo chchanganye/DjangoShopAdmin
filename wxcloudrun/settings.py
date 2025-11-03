@@ -69,7 +69,7 @@ WSGI_APPLICATION = 'wxcloudrun.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/3.2/ref/settings/#databases
 
-# 数据库配置 - 支持环境变量和本地开发
+# 数据库配置 - 从环境变量读取
 mysql_address = os.environ.get("MYSQL_ADDRESS", "localhost:3306")
 mysql_host, mysql_port = mysql_address.split(':') if ':' in mysql_address else (mysql_address, '3306')
 
@@ -77,10 +77,10 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.environ.get("MYSQL_DATABASE", 'django_demo'),
-        'USER': os.environ.get("MYSQL_USERNAME", 'root'),
+        'USER': os.environ.get("MYSQL_USERNAME"),
         'HOST': mysql_host,
         'PORT': mysql_port,
-        'PASSWORD': os.environ.get("MYSQL_PASSWORD", ''),
+        'PASSWORD': os.environ.get("MYSQL_PASSWORD"),
         'OPTIONS': {'charset': 'utf8mb4'},
     }
 }

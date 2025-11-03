@@ -16,18 +16,8 @@ Including another URLconf
 
 from wxcloudrun import views
 from django.conf.urls import url
-from django.contrib import admin
 
 urlpatterns = (
-    # Django Admin 后台
-    url(r'^admin/?', admin.site.urls),
-
-    # 已移除计数器示例接口
-
-    # 获取主页（仅匹配根路径）
-    # 修复 Django urls.W002：模式不应以 '/' 开头
-    url(r'^$', views.index),
-
     # 商品分类
     url(r'^api/categories/?$', views.categories_list),
 
@@ -54,6 +44,6 @@ urlpatterns = (
     url(r'^api/points/change/?$', views.points_change),
 
     # 管理员认证相关
-    url(r'^api/admin/auth/login/?$', views.admin_login),        # POST
-    url(r'^api/admin/auth/me/?$', views.admin_me),              # GET
+    url(r'^api/admin/login/?$', views.admin_login),        # POST
+    url(r'^api/admin/me/?$', views.admin_me),              # GET
 )
