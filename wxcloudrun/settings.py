@@ -193,8 +193,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGS_DIR = '/data/logs/'
 
+# 项目源代码中的静态资源目录（开发/构建产物）
 STATICFILES_DIRS = [
-     os.path.join(BASE_DIR, "static"),
- ]
+    os.path.join(BASE_DIR, "static"),
+]
 
-STATIC_ROOT = os.path.join(BASE_DIR, "static")
+# collectstatic 的输出目录（用于部署/生产静态文件收集），不得与 STATICFILES_DIRS 相同
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
