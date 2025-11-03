@@ -23,10 +23,10 @@ urlpatterns = (
     url(r'^admin/?', admin.site.urls),
 
     # 计数器接口
-    url(r'^^api/count(/)?$', views.counter),
+    url(r'^api/count(/)?$', views.counter),
 
-    # 获取主页
-    url(r'(/)?$', views.index),
+    # 获取主页（仅匹配根路径）
+    url(r'^/?$', views.index),
 
     # 商品分类
     url(r'^api/categories/?$', views.categories_list),
