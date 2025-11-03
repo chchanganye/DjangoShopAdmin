@@ -4,18 +4,13 @@
 # 使用 Alpine 3.18 以获取 Python 3.11（原生支持 zoneinfo，无需 backports）
 FROM alpine:3.18
 
-# 容器默认时区设置为上海时间
-RUN apk add tzdata && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && echo Asia/Shanghai > /etc/timezone
-
-# 使用 HTTPS 协议访问容器云调用证书安装
-RUN apk add ca-certificates
-
-# 选用国内镜像源以提高下载速度
+# 使用国内镜像源并安装基础依赖、时区、构建工具
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencent.com/g' /etc/apk/repositories \
-&& apk add --update --no-cache python3 py3-pip \
-# 安装构建依赖（用于编译需要C扩展的Python包）
-&& apk add --no-cache gcc musl-dev python3-dev \
-&& rm -rf /var/cache/apk/*
+    && apk update \
+    && apk add --no-cache tzdata ca-certificates python3 py3-pip gcc musl-dev python3-dev \
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo Asia/Shanghai > /etc/timezone \
+    && rm -rf /var/cache/apk/*
 
 # 拷贝依赖文件
 COPY requirements.txt /tmp/requirements.txt
