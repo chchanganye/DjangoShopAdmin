@@ -2,21 +2,7 @@ from datetime import datetime, date
 
 from django.db import models
 
-
-# Create your models here.
-class Counters(models.Model):
-    id = models.AutoField(primary_key=True)
-    count = models.IntegerField('计数值', default=0)
-    createdAt = models.DateTimeField('创建时间', default=datetime.now)
-    updatedAt = models.DateTimeField('更新时间', default=datetime.now)
-
-    def __str__(self):
-        return f"Counters({self.id})"
-
-    class Meta:
-        db_table = 'Counters'  # 数据库表名
-        verbose_name = '计数器'
-        verbose_name_plural = '计数器'
+# 已移除官方示例计数器模型 Counters（与本项目无关）
 
 
 # 商品分类

@@ -1,6 +1,5 @@
 from django.contrib import admin
 from .models import (
-    Counters,
     Category,
     UserInfo,
     PropertyProfile,
@@ -11,10 +10,7 @@ from .models import (
 )
 
 
-@admin.register(Counters)
-class CountersAdmin(admin.ModelAdmin):
-    list_display = ("id", "count", "createdAt", "updatedAt")
-    ordering = ("-id",)
+# 已移除 Counters 模型的后台管理注册
 
 
 @admin.register(Category)

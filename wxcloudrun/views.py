@@ -7,7 +7,6 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.models import (
-    Counters,
     Category,
     UserInfo,
     MerchantProfile,
@@ -31,35 +30,37 @@ def index(request, _):
     return render(request, 'index.html')
 
 
-def counter(request, _):
-    """
-    获取当前计数
-
-     `` request `` 请求对象
-    """
-
-    rsp = JsonResponse({'code': 0, 'errorMsg': ''}, json_dumps_params={'ensure_ascii': False})
-    if request.method == 'GET' or request.method == 'get':
-        rsp = get_count()
-    elif request.method == 'POST' or request.method == 'post':
-        rsp = update_count(request)
-    else:
-        rsp = JsonResponse({'code': -1, 'errorMsg': '请求方式错误'},
-                            json_dumps_params={'ensure_ascii': False})
-    logger.info('response result: {}'.format(rsp.content.decode('utf-8')))
-    return rsp
+# 已移除官方示例计数器接口（与本项目无关）
 
 
 # ---------------------- 通用工具与权限管理 ----------------------
 
-def json_ok(data=None, status=200):
-    return JsonResponse({'code': 0, 'data': data or {}}, status=status,
-                        json_dumps_params={'ensure_ascii': False})
+def json_ok(data=None, status=200, message='success'):
+    """统一成功响应结构
+    - code: 业务状态码，默认等于 HTTP 状态码（200/201/204等）
+    - message: 人类可读提示，默认 'success'
+    - data: 成功时返回的数据；若传入 None，返回空对象 {}
+    """
+    payload = {
+        'code': status,
+        'message': message,
+        'data': {} if data is None else data,
+    }
+    return JsonResponse(payload, status=status, json_dumps_params={'ensure_ascii': False})
 
 
-def json_err(message='错误', code=-1, status=400):
-    return JsonResponse({'code': code, 'errorMsg': message}, status=status,
-                        json_dumps_params={'ensure_ascii': False})
+def json_err(message='错误', code=None, status=400):
+    """统一错误响应结构
+    - code: 业务状态码，默认等于 HTTP 状态码（400/401/403/404/500等）
+    - message: 错误信息
+    - data: 错误时固定为 None
+    """
+    payload = {
+        'code': code or status,
+        'message': message,
+        'data': None,
+    }
+    return JsonResponse(payload, status=status, json_dumps_params={'ensure_ascii': False})
 
 
 def _get_openid(request):
@@ -351,54 +352,4 @@ def admin_api_permissions(request, user):
 
 
 
-def get_count():
-    """
-    获取当前计数
-    """
-
-    try:
-        data = Counters.objects.get(id=1)
-    except Counters.DoesNotExist:
-        return JsonResponse({'code': 0, 'data': 0},
-                    json_dumps_params={'ensure_ascii': False})
-    return JsonResponse({'code': 0, 'data': data.count},
-                        json_dumps_params={'ensure_ascii': False})
-
-
-def update_count(request):
-    """
-    更新计数，自增或者清零
-
-    `` request `` 请求对象
-    """
-
-    logger.info('update_count req: {}'.format(request.body))
-
-    body_unicode = request.body.decode('utf-8')
-    body = json.loads(body_unicode)
-
-    if 'action' not in body:
-        return JsonResponse({'code': -1, 'errorMsg': '缺少action参数'},
-                            json_dumps_params={'ensure_ascii': False})
-
-    if body['action'] == 'inc':
-        try:
-            data = Counters.objects.get(id=1)
-        except Counters.DoesNotExist:
-            data = Counters()
-        data.id = 1
-        data.count += 1
-        data.save()
-        return JsonResponse({'code': 0, "data": data.count},
-                    json_dumps_params={'ensure_ascii': False})
-    elif body['action'] == 'clear':
-        try:
-            data = Counters.objects.get(id=1)
-            data.delete()
-        except Counters.DoesNotExist:
-            logger.info('record not exist')
-        return JsonResponse({'code': 0, 'data': 0},
-                    json_dumps_params={'ensure_ascii': False})
-    else:
-        return JsonResponse({'code': -1, 'errorMsg': 'action参数错误'},
-                    json_dumps_params={'ensure_ascii': False})
+# 注：若需要保留演示页面，可在 templates/index.html 中展示静态内容或自定义引导，无需后端计数接口。

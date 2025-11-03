@@ -22,8 +22,7 @@ urlpatterns = (
     # Django Admin 后台
     url(r'^admin/?', admin.site.urls),
 
-    # 计数器接口
-    url(r'^api/count(/)?$', views.counter),
+    # 已移除计数器示例接口
 
     # 获取主页（仅匹配根路径）
     url(r'^/?$', views.index),
