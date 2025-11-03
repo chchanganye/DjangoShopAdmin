@@ -25,7 +25,8 @@ urlpatterns = (
     # 已移除计数器示例接口
 
     # 获取主页（仅匹配根路径）
-    url(r'^/?$', views.index),
+    # 修复 Django urls.W002：模式不应以 '/' 开头
+    url(r'^$', views.index),
 
     # 商品分类
     url(r'^api/categories/?$', views.categories_list),
