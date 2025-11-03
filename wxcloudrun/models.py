@@ -202,6 +202,30 @@ class PointsRecord(models.Model):
         verbose_name_plural = '积分记录'
 
 
+class PointsShareSetting(models.Model):
+    """积分分成配置（全局仅一条记录）"""
+
+    merchant_rate = models.PositiveIntegerField('商户积分比例(%)', default=90)
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'PointsShareSetting'
+        verbose_name = '积分分成配置'
+        verbose_name_plural = '积分分成配置'
+
+    def save(self, *args, **kwargs):
+        if self.merchant_rate < 0 or self.merchant_rate > 100:
+            raise ValueError('商户积分比例必须在 0-100 之间')
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(id=1, defaults={'merchant_rate': 90})
+        return obj
+
+
 # 接口权限配置
 class ApiPermission(models.Model):
     endpoint_name = models.CharField('接口标识', max_length=100)  # 唯一标识一个接口，如 'categories_list'
