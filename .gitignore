@@ -1,1 +1,9 @@
 API接口文档.md
+Django命令参考.md
+/staticfiles/
+.venv
+/wxcloudrun/__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
