@@ -213,16 +213,15 @@ def get_points_share_setting():
 @require_http_methods(["GET"])
 def categories_list(request):
     qs = Category.objects.all().order_by('id')
-    icon_file_ids = [c.icon_name for c in qs if c.icon_name and c.icon_name.startswith('cloud://')]
+    icon_file_ids = [c.icon_file_id for c in qs if c.icon_file_id and c.icon_file_id.startswith('cloud://')]
     temp_urls = get_temp_file_urls(icon_file_ids)
 
     items = []
     for c in qs:
-        icon_file_id = c.icon_name or ''
+        icon_file_id = c.icon_file_id or ''
         icon_url = resolve_icon_url(icon_file_id, temp_urls)
         items.append({
             'name': c.name,
-            'icon_name': icon_file_id,
             'icon_file_id': icon_file_id,
             'icon_url': icon_url,
         })
@@ -523,17 +522,16 @@ def admin_categories(request, admin):
     """分类管理 - GET列表 / POST创建"""
     if request.method == 'GET':
         qs = Category.objects.all().order_by('id')
-        icon_file_ids = [c.icon_name for c in qs if c.icon_name and c.icon_name.startswith('cloud://')]
+        icon_file_ids = [c.icon_file_id for c in qs if c.icon_file_id and c.icon_file_id.startswith('cloud://')]
         temp_urls = get_temp_file_urls(icon_file_ids)
 
         items = []
         for c in qs:
-            icon_file_id = c.icon_name or ''
+            icon_file_id = c.icon_file_id or ''
             icon_url = resolve_icon_url(icon_file_id, temp_urls)
             items.append({
                 'id': c.id,
                 'name': c.name,
-                'icon_name': icon_file_id,
                 'icon_file_id': icon_file_id,
                 'icon_url': icon_url,
             })
@@ -546,20 +544,19 @@ def admin_categories(request, admin):
         return json_err('请求体格式错误', status=400)
     
     name = body.get('name')
-    icon_name = body.get('icon_file_id') or body.get('icon_name', '')
+    icon_file_id = body.get('icon_file_id') or body.get('icon_name', '')
     
     if not name:
         return json_err('缺少参数 name', status=400)
     
     try:
-        category = Category.objects.create(name=name, icon_name=icon_name)
-        temp_urls = get_temp_file_urls([category.icon_name]) if category.icon_name and category.icon_name.startswith('cloud://') else {}
-        icon_url = resolve_icon_url(category.icon_name, temp_urls)
+        category = Category.objects.create(name=name, icon_file_id=icon_file_id)
+        temp_urls = get_temp_file_urls([category.icon_file_id]) if category.icon_file_id and category.icon_file_id.startswith('cloud://') else {}
+        icon_url = resolve_icon_url(category.icon_file_id, temp_urls)
         return json_ok({
             'id': category.id,
             'name': category.name,
-            'icon_name': category.icon_name,
-            'icon_file_id': category.icon_name,
+            'icon_file_id': category.icon_file_id,
             'icon_url': icon_url,
         }, status=201)
     except Exception as e:
@@ -589,17 +586,16 @@ def admin_categories_detail(request, admin, category_id):
     if 'name' in body:
         category.name = body['name']
     if 'icon_name' in body or 'icon_file_id' in body:
-        category.icon_name = body.get('icon_file_id') or body.get('icon_name', '')
+        category.icon_file_id = body.get('icon_file_id') or body.get('icon_name', '')
     
     try:
         category.save()
-        temp_urls = get_temp_file_urls([category.icon_name]) if category.icon_name and category.icon_name.startswith('cloud://') else {}
-        icon_url = resolve_icon_url(category.icon_name, temp_urls)
+        temp_urls = get_temp_file_urls([category.icon_file_id]) if category.icon_file_id and category.icon_file_id.startswith('cloud://') else {}
+        icon_url = resolve_icon_url(category.icon_file_id, temp_urls)
         return json_ok({
             'id': category.id,
             'name': category.name,
-            'icon_name': category.icon_name,
-            'icon_file_id': category.icon_name,
+            'icon_file_id': category.icon_file_id,
             'icon_url': icon_url,
         })
     except Exception as e:

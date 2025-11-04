@@ -8,7 +8,7 @@ from django.db import models
 # 商品分类
 class Category(models.Model):
     name = models.CharField('分类名称', max_length=100, unique=True)
-    icon_name = models.CharField('图标名称', max_length=100, blank=True, default='')
+    icon_file_id = models.CharField('图标文件ID', max_length=255, blank=True, default='')
 
     created_at = models.DateTimeField('创建时间', default=datetime.now)
     updated_at = models.DateTimeField('更新时间', default=datetime.now)

@@ -15,7 +15,7 @@ from .models import (
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "icon_name", "created_at", "updated_at")
+    list_display = ("name", "icon_file_id", "created_at", "updated_at")
     search_fields = ("name",)
     ordering = ("name",)
 
