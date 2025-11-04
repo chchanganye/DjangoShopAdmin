@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('wxcloudrun', '0001_initial'),
+        ('wxcloudrun', '0002_drop_counters'),
     ]
 
     operations = [
