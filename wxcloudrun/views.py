@@ -203,6 +203,15 @@ def resolve_icon_url(icon_value, temp_map=None):
     return ''
 
 
+def delete_cloud_files(file_ids):
+    if not file_ids:
+        return
+    wx_openapi_post('tcb/batchdeletefile', {
+        'env': WX_ENV_ID,
+        'fileid_list': file_ids,
+    })
+
+
 def get_points_share_setting():
     return PointsShareSetting.get_solo()
 
@@ -544,7 +553,7 @@ def admin_categories(request, admin):
         return json_err('请求体格式错误', status=400)
     
     name = body.get('name')
-    icon_file_id = body.get('icon_file_id') or body.get('icon_name', '')
+    icon_file_id = body.get('icon_file_id', '')
     
     if not name:
         return json_err('缺少参数 name', status=400)
@@ -583,10 +592,19 @@ def admin_categories_detail(request, admin, category_id):
     except Exception:
         return json_err('请求体格式错误', status=400)
     
+    old_icon_file_id = category.icon_file_id or ''
+
     if 'name' in body:
         category.name = body['name']
-    if 'icon_name' in body or 'icon_file_id' in body:
-        category.icon_file_id = body.get('icon_file_id') or body.get('icon_name', '')
+    if 'icon_file_id' in body:
+        new_icon_file_id = body.get('icon_file_id') or ''
+        if new_icon_file_id != old_icon_file_id and old_icon_file_id.startswith('cloud://'):
+            try:
+                delete_cloud_files([old_icon_file_id])
+            except WxOpenApiError as exc:
+                logger.error(f'删除旧分类图标失败: {str(exc)}', exc_info=True)
+                return json_err(f'删除旧图标失败: {str(exc)}', status=500)
+        category.icon_file_id = new_icon_file_id
     
     try:
         category.save()
