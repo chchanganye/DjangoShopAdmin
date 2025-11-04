@@ -1,7 +1,10 @@
 import json
 import logging
+import os
+import uuid
 from datetime import date
 
+import requests
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate
@@ -20,6 +23,14 @@ from rest_framework.authtoken.models import Token
 
 
 logger = logging.getLogger('log')
+
+
+class WxOpenApiError(Exception):
+    pass
+
+
+WX_OPENAPI_BASE = os.environ.get('WX_OPENAPI_BASE', 'https://api.weixin.qq.com')
+WX_ENV_ID = os.environ.get('COS_BUCKET') or os.environ.get('WX_ENV_ID')
 # 已移除官方示例计数器接口和 index 页面（本项目为纯 API 后端）
 
 
@@ -139,6 +150,59 @@ def change_user_points(user: UserInfo, delta: int):
     return user
 
 
+def wx_openapi_post(path: str, payload: dict):
+    if not WX_ENV_ID:
+        raise WxOpenApiError('未配置 COS_BUCKET / WX_ENV_ID 环境变量')
+
+    url = f"{WX_OPENAPI_BASE.rstrip('/')}/{path.lstrip('/')}"
+    headers = {'Content-Type': 'application/json'}
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error(f'请求微信开放接口失败: {path}, error={exc}')
+        raise WxOpenApiError('调用微信开放接口失败') from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        logger.error(f'解析微信开放接口响应失败: {path}, resp={resp.text}')
+        raise WxOpenApiError('微信开放接口返回格式错误') from exc
+
+    if data.get('errcode') != 0:
+        logger.error(f'微信开放接口返回错误: {path}, payload={payload}, resp={data}')
+        raise WxOpenApiError(data.get('errmsg') or '微信开放接口返回错误')
+    return data
+
+
+def get_temp_file_urls(file_ids):
+    if not file_ids:
+        return {}
+    try:
+        data = wx_openapi_post('tcb/batchdownloadfile', {
+            'env': WX_ENV_ID,
+            'file_list': [{'fileid': fid, 'max_age': 7200} for fid in file_ids],
+        })
+    except WxOpenApiError:
+        return {}
+
+    url_map = {}
+    for item in data.get('file_list', []):
+        if item.get('status') == 0:
+            url_map[item['fileid']] = item.get('download_url')
+    return url_map
+
+
+def resolve_icon_url(icon_value, temp_map=None):
+    if not icon_value:
+        return ''
+    if icon_value.startswith('cloud://'):
+        return (temp_map or {}).get(icon_value, '')
+    if icon_value.startswith('http://') or icon_value.startswith('https://'):
+        return icon_value
+    return ''
+
+
 def get_points_share_setting():
     return PointsShareSetting.get_solo()
 
@@ -149,7 +213,19 @@ def get_points_share_setting():
 @require_http_methods(["GET"])
 def categories_list(request):
     qs = Category.objects.all().order_by('id')
-    items = [{'name': c.name, 'icon_name': c.icon_name} for c in qs]
+    icon_file_ids = [c.icon_name for c in qs if c.icon_name and c.icon_name.startswith('cloud://')]
+    temp_urls = get_temp_file_urls(icon_file_ids)
+
+    items = []
+    for c in qs:
+        icon_file_id = c.icon_name or ''
+        icon_url = resolve_icon_url(icon_file_id, temp_urls)
+        items.append({
+            'name': c.name,
+            'icon_name': icon_file_id,
+            'icon_file_id': icon_file_id,
+            'icon_url': icon_url,
+        })
     return json_ok({'total': qs.count(), 'list': items})
 
 
@@ -447,7 +523,20 @@ def admin_categories(request, admin):
     """分类管理 - GET列表 / POST创建"""
     if request.method == 'GET':
         qs = Category.objects.all().order_by('id')
-        items = [{'id': c.id, 'name': c.name, 'icon_name': c.icon_name} for c in qs]
+        icon_file_ids = [c.icon_name for c in qs if c.icon_name and c.icon_name.startswith('cloud://')]
+        temp_urls = get_temp_file_urls(icon_file_ids)
+
+        items = []
+        for c in qs:
+            icon_file_id = c.icon_name or ''
+            icon_url = resolve_icon_url(icon_file_id, temp_urls)
+            items.append({
+                'id': c.id,
+                'name': c.name,
+                'icon_name': icon_file_id,
+                'icon_file_id': icon_file_id,
+                'icon_url': icon_url,
+            })
         return json_ok({'total': len(items), 'list': items})
     
     # POST 创建
@@ -457,14 +546,22 @@ def admin_categories(request, admin):
         return json_err('请求体格式错误', status=400)
     
     name = body.get('name')
-    icon_name = body.get('icon_name', '')
+    icon_name = body.get('icon_file_id') or body.get('icon_name', '')
     
     if not name:
         return json_err('缺少参数 name', status=400)
     
     try:
         category = Category.objects.create(name=name, icon_name=icon_name)
-        return json_ok({'id': category.id, 'name': category.name, 'icon_name': category.icon_name}, status=201)
+        temp_urls = get_temp_file_urls([category.icon_name]) if category.icon_name and category.icon_name.startswith('cloud://') else {}
+        icon_url = resolve_icon_url(category.icon_name, temp_urls)
+        return json_ok({
+            'id': category.id,
+            'name': category.name,
+            'icon_name': category.icon_name,
+            'icon_file_id': category.icon_name,
+            'icon_url': icon_url,
+        }, status=201)
     except Exception as e:
         logger.error(f'创建分类失败: {str(e)}')
         return json_err(f'创建失败: {str(e)}', status=400)
@@ -491,12 +588,20 @@ def admin_categories_detail(request, admin, category_id):
     
     if 'name' in body:
         category.name = body['name']
-    if 'icon_name' in body:
-        category.icon_name = body.get('icon_name', '')
+    if 'icon_name' in body or 'icon_file_id' in body:
+        category.icon_name = body.get('icon_file_id') or body.get('icon_name', '')
     
     try:
         category.save()
-        return json_ok({'id': category.id, 'name': category.name, 'icon_name': category.icon_name})
+        temp_urls = get_temp_file_urls([category.icon_name]) if category.icon_name and category.icon_name.startswith('cloud://') else {}
+        icon_url = resolve_icon_url(category.icon_name, temp_urls)
+        return json_ok({
+            'id': category.id,
+            'name': category.name,
+            'icon_name': category.icon_name,
+            'icon_file_id': category.icon_name,
+            'icon_url': icon_url,
+        })
     except Exception as e:
         logger.error(f'更新分类失败: {str(e)}')
         return json_err(f'更新失败: {str(e)}', status=400)
@@ -825,9 +930,27 @@ def admin_properties_detail(request, admin, openid):
 # ---------------------- 4. 用户管理 CRUD（扩展） ----------------------
 
 @admin_token_required
-@require_http_methods(["POST"])
-def admin_users_create(request, admin):
-    """创建用户"""
+@require_http_methods(["GET", "POST"])
+def admin_users(request, admin):
+    """用户管理 - GET列表 / POST创建"""
+    if request.method == 'GET':
+        qs = UserInfo.objects.select_related('owner_property').all().order_by('id')
+        items = []
+        for u in qs:
+            items.append({
+                'system_id': u.system_id,
+                'openid': u.openid,
+                'identity_type': u.identity_type,
+                'avatar_url': u.avatar_url,
+                'phone_number': u.phone_number,
+                'daily_points': u.daily_points,
+                'total_points': u.total_points,
+                'owner_property_id': u.owner_property.property_id if u.owner_property else None,
+                'owner_property_name': u.owner_property.property_name if u.owner_property else None,
+            })
+        return json_ok({'total': len(items), 'list': items})
+
+    # POST 创建
     try:
         body = json.loads(request.body.decode('utf-8'))
     except Exception:
@@ -940,7 +1063,85 @@ def admin_users_detail(request, admin, system_id):
         return json_err(f'更新失败: {str(e)}', status=400)
 
 
-# ---------------------- 5. 积分分成配置 ----------------------
+# ---------------------- 5. 存储辅助接口 ----------------------
+
+def _generate_storage_path(filename: str, directory: str = 'category-icons') -> str:
+    directory = directory.strip().strip('/') or 'category-icons'
+    ext = ''
+    if filename:
+        ext = os.path.splitext(filename)[1].lower()
+    return f"{directory}/{uuid.uuid4().hex}{ext}"
+
+
+@admin_token_required
+@require_http_methods(["POST"])
+def admin_storage_upload_credential(request, admin):
+    if not WX_ENV_ID:
+        return json_err('未配置存储环境变量 COS_BUCKET/WX_ENV_ID', status=500)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    filename = body.get('filename', '') or ''
+    directory = body.get('directory', 'category-icons')
+    custom_path = body.get('path')
+
+    if custom_path:
+        storage_path = custom_path.lstrip('/')
+    else:
+        storage_path = _generate_storage_path(filename, directory)
+
+    try:
+        data = wx_openapi_post('tcb/uploadfile', {
+            'env': WX_ENV_ID,
+            'path': storage_path,
+        })
+    except WxOpenApiError as exc:
+        return json_err(str(exc) or '获取上传凭证失败', status=500)
+
+    return json_ok({
+        'file_id': data.get('file_id'),
+        'upload_url': data.get('url'),
+        'authorization': data.get('authorization'),
+        'token': data.get('token'),
+        'cos_file_id': data.get('cos_file_id'),
+        'path': storage_path,
+        'expires_in': data.get('expired_time'),
+    })
+
+
+@admin_token_required
+@require_http_methods(["POST"])
+def admin_storage_delete_files(request, admin):
+    if not WX_ENV_ID:
+        return json_err('未配置存储环境变量 COS_BUCKET/WX_ENV_ID', status=500)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    file_ids = body.get('file_ids')
+    if not file_ids or not isinstance(file_ids, list):
+        return json_err('缺少参数 file_ids', status=400)
+
+    try:
+        data = wx_openapi_post('tcb/batchdeletefile', {
+            'env': WX_ENV_ID,
+            'fileid_list': file_ids,
+        })
+    except WxOpenApiError as exc:
+        return json_err(str(exc) or '删除文件失败', status=500)
+
+    return json_ok({
+        'deleted': file_ids,
+        'result': data.get('delete_list', []),
+    })
+
+
+# ---------------------- 6. 积分分成配置 ----------------------
 
 @admin_token_required
 @require_http_methods(["GET", "PUT"])

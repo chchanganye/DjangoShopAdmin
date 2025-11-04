@@ -59,8 +59,12 @@ urlpatterns = (
     url(r'^api/admin/properties/(?P<openid>[^/]+)/?$', views.admin_properties_detail), # PUT/DELETE
 
     # 管理员-用户管理 CRUD
-    url(r'^api/admin/users/?$', views.admin_users_create),                     # POST
+    url(r'^api/admin/users/?$', views.admin_users),                            # GET/POST
     url(r'^api/admin/users/(?P<system_id>[^/]+)/?$', views.admin_users_detail),  # PUT/DELETE
+
+    # 管理员-对象存储辅助接口
+    url(r'^api/admin/storage/upload-credential/?$', views.admin_storage_upload_credential),  # POST
+    url(r'^api/admin/storage/delete/?$', views.admin_storage_delete_files),                  # POST
 
     # 管理员-积分分成配置
     url(r'^api/admin/share-setting/?$', views.admin_share_setting),            # GET/PUT
