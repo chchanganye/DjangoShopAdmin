@@ -291,26 +291,26 @@ def users_list(request, admin):
 def merchants_list(request):
     try:
         # 查询所有商户，即使没有关联 user 也返回
-    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
-    items = []
-    for m in qs:
-        items.append({
+        qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+        items = []
+        for m in qs:
+            items.append({
                 'merchant_id': m.merchant_id,
                 'merchant_name': m.merchant_name,
                 'title': m.title,
-            'description': m.description,
-            'banner_urls': m.banner_list(),
-            'category': m.category.name if m.category else None,
+                'description': m.description,
+                'banner_urls': m.banner_list(),
+                'category': m.category.name if m.category else None,
                 'category_id': m.category.id if m.category else None,
-            'contact_phone': m.contact_phone,
-            'address': m.address,
-            'positive_rating_percent': m.positive_rating_percent,
+                'contact_phone': m.contact_phone,
+                'address': m.address,
+                'positive_rating_percent': m.positive_rating_percent,
             })
         logger.info(f'查询商户列表，共 {len(items)} 条')
         return json_ok({'total': len(items), 'list': items})
-    except Exception as e:
-        logger.error(f'查询商户列表失败: {str(e)}', exc_info=True)
-        return json_err(f'查询失败: {str(e)}', status=500)
+    except Exception as exc:
+        logger.error(f'查询商户列表失败: {str(exc)}', exc_info=True)
+        return json_err(f'查询失败: {str(exc)}', status=500)
 
 
 @openid_required
