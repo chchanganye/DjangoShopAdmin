@@ -29,7 +29,7 @@ class WxOpenApiError(Exception):
     pass
 
 
-WX_OPENAPI_BASE = os.environ.get('WX_OPENAPI_BASE', 'https://api.weixin.qq.com')
+WX_OPENAPI_BASE = os.environ.get('WX_OPENAPI_BASE', 'http://api.weixin.qq.com')
 WX_ENV_ID = os.environ.get('COS_BUCKET') or os.environ.get('WX_ENV_ID')
 # 已移除官方示例计数器接口和 index 页面（本项目为纯 API 后端）
 
