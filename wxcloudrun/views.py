@@ -30,7 +30,7 @@ class WxOpenApiError(Exception):
 
 
 WX_OPENAPI_BASE = os.environ.get('WX_OPENAPI_BASE', 'http://api.weixin.qq.com')
-WX_ENV_ID = os.environ.get('COS_BUCKET') or os.environ.get('WX_ENV_ID')
+WX_ENV_ID = os.environ.get('CLOUD_ID')
 # 已移除官方示例计数器接口和 index 页面（本项目为纯 API 后端）
 
 
@@ -152,7 +152,7 @@ def change_user_points(user: UserInfo, delta: int):
 
 def wx_openapi_post(path: str, payload: dict):
     if not WX_ENV_ID:
-        raise WxOpenApiError('未配置 COS_BUCKET / WX_ENV_ID 环境变量')
+        raise WxOpenApiError('未配置 CLOUD_ID 环境变量')
 
     url = f"{WX_OPENAPI_BASE.rstrip('/')}/{path.lstrip('/')}"
     headers = {'Content-Type': 'application/json'}
@@ -291,20 +291,20 @@ def users_list(request, admin):
 def merchants_list(request):
     try:
         # 查询所有商户，即使没有关联 user 也返回
-        qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
-        items = []
-        for m in qs:
-            items.append({
+    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+    items = []
+    for m in qs:
+        items.append({
                 'merchant_id': m.merchant_id,
                 'merchant_name': m.merchant_name,
                 'title': m.title,
-                'description': m.description,
-                'banner_urls': m.banner_list(),
-                'category': m.category.name if m.category else None,
+            'description': m.description,
+            'banner_urls': m.banner_list(),
+            'category': m.category.name if m.category else None,
                 'category_id': m.category.id if m.category else None,
-                'contact_phone': m.contact_phone,
-                'address': m.address,
-                'positive_rating_percent': m.positive_rating_percent,
+            'contact_phone': m.contact_phone,
+            'address': m.address,
+            'positive_rating_percent': m.positive_rating_percent,
             })
         logger.info(f'查询商户列表，共 {len(items)} 条')
         return json_ok({'total': len(items), 'list': items})
@@ -1077,7 +1077,7 @@ def _generate_storage_path(filename: str, directory: str = 'category-icons') -> 
 @require_http_methods(["POST"])
 def admin_storage_upload_credential(request, admin):
     if not WX_ENV_ID:
-        return json_err('未配置存储环境变量 COS_BUCKET/WX_ENV_ID', status=500)
+        return json_err('未配置存储环境变量 CLOUD_ID', status=500)
 
     try:
         body = json.loads(request.body.decode('utf-8'))
@@ -1116,7 +1116,7 @@ def admin_storage_upload_credential(request, admin):
 @require_http_methods(["POST"])
 def admin_storage_delete_files(request, admin):
     if not WX_ENV_ID:
-        return json_err('未配置存储环境变量 COS_BUCKET/WX_ENV_ID', status=500)
+        return json_err('未配置存储环境变量 CLOUD_ID', status=500)
 
     try:
         body = json.loads(request.body.decode('utf-8'))
