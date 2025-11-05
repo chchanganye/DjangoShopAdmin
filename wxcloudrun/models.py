@@ -1,6 +1,7 @@
 from datetime import datetime, date
 
 from django.db import models
+from django.contrib.auth.models import User
 
 # 已移除官方示例计数器模型 Counters（与本项目无关）
 
