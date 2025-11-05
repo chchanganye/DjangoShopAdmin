@@ -18,14 +18,16 @@ from wxcloudrun import views
 from django.conf.urls import url
 
 urlpatterns = (
+    # ========== 小程序端接口 ==========
+    
+    # 用户登录与身份管理
+    url(r'^api/user/login/?$', views.user_login),                          # GET 登录/获取用户信息
+    url(r'^api/user/profile/?$', views.user_update_profile),               # PUT 更新个人信息（业主绑定物业）
+    url(r'^api/user/identity/apply/?$', views.identity_apply),             # POST 申请商户/物业身份
+    url(r'^api/properties/public/?$', views.properties_public_list),       # GET 获取物业列表（供业主选择）
+    
     # 商品分类
     url(r'^api/categories/?$', views.categories_list),
-
-    # 用户个人信息
-    url(r'^api/user/profile/?$', views.user_profile),
-
-    # 用户信息
-    url(r'^api/users/?$', views.users_list),
 
     # 商户信息
     url(r'^api/merchants/?$', views.merchants_list),
@@ -40,9 +42,11 @@ urlpatterns = (
     # 积分阈值查询（小程序端，使用 openid）
     url(r'^api/thresholds/(?P<openid>[^/]+)/?$', views.threshold_query),
 
-    # 积分变更示例
+    # 积分变更
     url(r'^api/points/change/?$', views.points_change),
 
+    # ========== 管理员端接口 ==========
+    
     # 管理员认证相关
     url(r'^api/admin/login/?$', views.admin_login),        # POST
 
@@ -71,4 +75,9 @@ urlpatterns = (
 
     # 管理员-积分变更记录查询
     url(r'^api/admin/points-records/?$', views.admin_points_records),          # GET
+    
+    # 管理员-身份申请审核管理
+    url(r'^api/admin/applications/?$', views.admin_applications_list),         # GET 获取申请列表
+    url(r'^api/admin/applications/approve/?$', views.admin_application_approve),   # POST 批准申请
+    url(r'^api/admin/applications/reject/?$', views.admin_application_reject),     # POST 拒绝申请
 )

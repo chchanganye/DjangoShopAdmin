@@ -18,6 +18,7 @@ from wxcloudrun.models import (
     PointsThreshold,
     PointsRecord,
     PointsShareSetting,
+    IdentityApplication,
 )
 from rest_framework.authtoken.models import Token
 
@@ -67,6 +68,17 @@ def json_err(message='错误', code=None, status=400):
 def _get_openid(request):
     """仅从 request.headers 读取微信云托管注入的 OpenID，不做任何回退或兼容逻辑。"""
     return request.headers.get('X-WX-OPENID')
+
+
+def _ensure_userinfo_exists(openid: str) -> UserInfo:
+    """若用户不存在则自动创建一条默认档案，确保前端接口可用。"""
+    user, created = UserInfo.objects.get_or_create(
+        openid=openid,
+        defaults={'identity_type': 'OWNER'},
+    )
+    if created:
+        logger.info(f'自动创建小程序用户: openid={openid}')
+    return user
 
 
 def _parse_auth_header(request):
@@ -119,6 +131,11 @@ def openid_required(view_func):
         openid = _get_openid(request)
         if not openid:
             return json_err('缺少openid', status=401)
+        try:
+            _ensure_userinfo_exists(openid)
+        except Exception as exc:
+            logger.error(f'自动创建用户失败: openid={openid}, error={exc}', exc_info=True)
+            return json_err('初始化用户失败', status=500)
         return view_func(request, *args, **kwargs)
     return _wrapped
 
@@ -216,7 +233,160 @@ def get_points_share_setting():
     return PointsShareSetting.get_solo()
 
 
-# ---------------------- 1. 商品分类管理接口 ----------------------
+# ---------------------- 1. 用户登录与身份模块 ----------------------
+
+@openid_required
+@require_http_methods(["GET"])
+def user_login(request):
+    """小程序登录接口：自动创建用户，返回用户身份和是否首次登录"""
+    openid = _get_openid(request)
+    user = UserInfo.objects.get(openid=openid)  # _ensure_userinfo_exists 已在装饰器里确保存在
+    
+    # 判断是否首次登录：identity_type 仍为默认 OWNER 且没有其他扩展字段
+    is_first_login = (
+        user.identity_type == 'OWNER' 
+        and not user.phone_number 
+        and not user.owner_property
+    )
+    
+    data = {
+        'system_id': user.system_id,
+        'openid': user.openid,
+        'identity_type': user.identity_type,
+        'avatar_url': user.avatar_url,
+        'phone_number': user.phone_number,
+        'is_first_login': is_first_login,
+    }
+    
+    if user.owner_property:
+        data['property'] = {
+            'property_id': user.owner_property.property_id,
+            'property_name': user.owner_property.property_name,
+        }
+    else:
+        data['property'] = None
+    
+    return json_ok(data)
+
+
+@openid_required
+@require_http_methods(["GET"])
+def properties_public_list(request):
+    """获取所有物业列表（供业主选择）"""
+    qs = PropertyProfile.objects.select_related('user').all().order_by('property_name')
+    items = []
+    for p in qs:
+        items.append({
+            'property_id': p.property_id,
+            'property_name': p.property_name,
+            'community_name': p.community_name,
+        })
+    return json_ok({'total': len(items), 'list': items})
+
+
+@openid_required
+@require_http_methods(["PUT"])
+def user_update_profile(request):
+    """用户更新个人信息（仅业主身份可直接绑定物业，其他身份需走申请流程）"""
+    openid = _get_openid(request)
+    try:
+        user = UserInfo.objects.get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+    
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    if 'avatar_url' in body:
+        user.avatar_url = body['avatar_url']
+    if 'phone_number' in body:
+        user.phone_number = body['phone_number']
+    
+    # 仅当申请业主身份时，可直接设置并关联物业
+    if 'identity_type' in body and body['identity_type'] == 'OWNER':
+        user.identity_type = 'OWNER'
+        if 'owner_property_id' in body:
+            property_id = body['owner_property_id']
+            if property_id:
+                try:
+                    user.owner_property = PropertyProfile.objects.get(property_id=property_id)
+                except PropertyProfile.DoesNotExist:
+                    return json_err('物业不存在', status=404)
+            else:
+                user.owner_property = None
+    
+    try:
+        user.save()
+        return json_ok({
+            'system_id': user.system_id,
+            'openid': user.openid,
+            'identity_type': user.identity_type,
+            'avatar_url': user.avatar_url,
+            'phone_number': user.phone_number,
+            'owner_property_id': user.owner_property.property_id if user.owner_property else None,
+        })
+    except Exception as exc:
+        logger.error(f'更新用户信息失败: {str(exc)}')
+        return json_err(f'更新失败: {str(exc)}', status=400)
+
+
+@openid_required
+@require_http_methods(["POST"])
+def identity_apply(request):
+    """用户申请变更身份（商户/物业需审核，业主直接通过user_update_profile）"""
+    openid = _get_openid(request)
+    try:
+        user = UserInfo.objects.get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+    
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    requested_identity = body.get('requested_identity')
+    if requested_identity not in ['MERCHANT', 'PROPERTY']:
+        return json_err('仅支持申请商户或物业身份', status=400)
+    
+    # 检查是否有待审核的申请
+    pending_count = IdentityApplication.objects.filter(user=user, status='PENDING').count()
+    if pending_count > 0:
+        return json_err('您已有待审核的申请，请勿重复提交', status=400)
+    
+    application = IdentityApplication(user=user, requested_identity=requested_identity)
+    
+    if requested_identity == 'MERCHANT':
+        application.merchant_name = body.get('merchant_name', '')
+        application.merchant_description = body.get('merchant_description', '')
+        application.merchant_address = body.get('merchant_address', '')
+        application.merchant_phone = body.get('merchant_phone', '')
+        
+        if not application.merchant_name:
+            return json_err('商户名称为必填项', status=400)
+    
+    elif requested_identity == 'PROPERTY':
+        application.property_name = body.get('property_name', '')
+        application.property_community = body.get('property_community', '')
+        
+        if not application.property_name:
+            return json_err('物业名称为必填项', status=400)
+    
+    try:
+        application.save()
+        return json_ok({
+            'application_id': application.id,
+            'status': 'PENDING',
+            'message': '申请已提交，请等待管理员审核'
+        }, status=201)
+    except Exception as exc:
+        logger.error(f'提交身份申请失败: {str(exc)}')
+        return json_err(f'提交失败: {str(exc)}', status=400)
+
+
+# ---------------------- 2. 商品分类管理接口 ----------------------
 
 @openid_required
 @require_http_methods(["GET"])
@@ -1194,7 +1364,7 @@ def admin_share_setting(request, admin):
     })
 
 
-# ---------------------- 6. 积分变更记录查询 ----------------------
+# ---------------------- 7. 积分变更记录查询 ----------------------
 
 @admin_token_required
 @require_http_methods(["GET"])
@@ -1222,4 +1392,143 @@ def admin_points_records(request, admin):
         })
     
     return json_ok({'total': len(items), 'list': items})
+
+
+# ---------------------- 8. 身份申请审核管理 ----------------------
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_applications_list(request, admin):
+    """获取所有身份申请记录（支持按状态筛选）"""
+    status_filter = request.GET.get('status')  # PENDING/APPROVED/REJECTED
+    
+    qs = IdentityApplication.objects.select_related('user').all().order_by('-created_at')
+    
+    if status_filter and status_filter in ['PENDING', 'APPROVED', 'REJECTED']:
+        qs = qs.filter(status=status_filter)
+    
+    items = []
+    for app in qs:
+        items.append({
+            'id': app.id,
+            'openid': app.user.openid,
+            'system_id': app.user.system_id,
+            'requested_identity': app.requested_identity,
+            'status': app.status,
+            'merchant_name': app.merchant_name,
+            'merchant_description': app.merchant_description,
+            'merchant_address': app.merchant_address,
+            'merchant_phone': app.merchant_phone,
+            'property_name': app.property_name,
+            'property_community': app.property_community,
+            'reviewed_by': app.reviewed_by.username if app.reviewed_by else None,
+            'reviewed_at': app.reviewed_at.strftime('%Y-%m-%d %H:%M:%S') if app.reviewed_at else None,
+            'reject_reason': app.reject_reason,
+            'created_at': app.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        })
+    
+    return json_ok({'total': len(items), 'list': items})
+
+
+@admin_token_required
+@require_http_methods(["POST"])
+def admin_application_approve(request, admin):
+    """批准身份申请"""
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    application_id = body.get('application_id')
+    if not application_id:
+        return json_err('缺少参数 application_id', status=400)
+    
+    try:
+        application = IdentityApplication.objects.select_related('user').get(id=application_id)
+    except IdentityApplication.DoesNotExist:
+        return json_err('申请不存在', status=404)
+    
+    if application.status != 'PENDING':
+        return json_err(f'该申请状态为 {application.get_status_display()}，无法批准', status=400)
+    
+    user = application.user
+    requested_identity = application.requested_identity
+    
+    try:
+        from datetime import datetime
+        from django.db import transaction
+        
+        with transaction.atomic():
+            # 更新用户身份
+            user.identity_type = requested_identity
+            user.save()
+            
+            # 根据申请类型创建对应档案
+            if requested_identity == 'MERCHANT':
+                MerchantProfile.objects.create(
+                    user=user,
+                    merchant_name=application.merchant_name,
+                    description=application.merchant_description,
+                    address=application.merchant_address,
+                    contact_phone=application.merchant_phone,
+                )
+            elif requested_identity == 'PROPERTY':
+                PropertyProfile.objects.create(
+                    user=user,
+                    property_name=application.property_name,
+                    community_name=application.property_community,
+                )
+            
+            # 更新申请状态
+            application.status = 'APPROVED'
+            application.reviewed_by = admin
+            application.reviewed_at = datetime.now()
+            application.save()
+        
+        return json_ok({
+            'application_id': application.id,
+            'status': 'APPROVED',
+            'message': '申请已批准'
+        })
+    
+    except Exception as exc:
+        logger.error(f'批准身份申请失败: {str(exc)}', exc_info=True)
+        return json_err(f'批准失败: {str(exc)}', status=500)
+
+
+@admin_token_required
+@require_http_methods(["POST"])
+def admin_application_reject(request, admin):
+    """拒绝身份申请"""
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    application_id = body.get('application_id')
+    reject_reason = body.get('reject_reason', '')
+    
+    if not application_id:
+        return json_err('缺少参数 application_id', status=400)
+    
+    try:
+        application = IdentityApplication.objects.get(id=application_id)
+    except IdentityApplication.DoesNotExist:
+        return json_err('申请不存在', status=404)
+    
+    if application.status != 'PENDING':
+        return json_err(f'该申请状态为 {application.get_status_display()}，无法拒绝', status=400)
+    
+    from datetime import datetime
+    application.status = 'REJECTED'
+    application.reviewed_by = admin
+    application.reviewed_at = datetime.now()
+    application.reject_reason = reject_reason
+    application.save()
+    
+    return json_ok({
+        'application_id': application.id,
+        'status': 'REJECTED',
+        'message': '申请已拒绝'
+    })
 

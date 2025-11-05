@@ -7,6 +7,7 @@ from .models import (
     PointsThreshold,
     PointsRecord,
     ApiPermission,
+    IdentityApplication,
 )
 
 
@@ -73,6 +74,15 @@ class ApiPermissionAdmin(admin.ModelAdmin):
     list_display = ("endpoint_name", "method", "allowed_identities", "updated_at")
     search_fields = ("endpoint_name", "method")
     list_filter = ("method",)
+
+
+@admin.register(IdentityApplication)
+class IdentityApplicationAdmin(admin.ModelAdmin):
+    list_display = ("user", "requested_identity", "status", "reviewed_by", "created_at", "reviewed_at")
+    search_fields = ("user__openid", "user__system_id", "merchant_name", "property_name")
+    list_filter = ("status", "requested_identity", "created_at")
+    ordering = ("-created_at",)
+    readonly_fields = ("created_at", "updated_at")
 
 
 # 自定义 Admin 站点文案

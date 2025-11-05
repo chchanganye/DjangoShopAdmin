@@ -247,3 +247,55 @@ class ApiPermission(models.Model):
 
     def allowed_list(self):
         return [s for s in self.allowed_identities.split(',') if s]
+
+
+# 身份申请记录
+class IdentityApplication(models.Model):
+    """用户申请变更身份的记录"""
+    
+    STATUS_CHOICES = (
+        ('PENDING', '待审核'),
+        ('APPROVED', '已批准'),
+        ('REJECTED', '已拒绝'),
+    )
+    
+    user = models.ForeignKey(UserInfo, verbose_name='申请用户', on_delete=models.CASCADE, related_name='identity_applications')
+    requested_identity = models.CharField('申请身份', max_length=20, choices=IDENTITY_CHOICES)
+    status = models.CharField('审核状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # 业主申请需填写的物业信息
+    owner_property_id = models.CharField('申请的物业ID', max_length=32, blank=True, default='')
+    
+    # 商户申请需填写的信息
+    merchant_name = models.CharField('商户名称', max_length=200, blank=True, default='')
+    merchant_description = models.TextField('商户简介', blank=True, default='')
+    merchant_address = models.CharField('商户地址', max_length=300, blank=True, default='')
+    merchant_phone = models.CharField('商户联系电话', max_length=32, blank=True, default='')
+    
+    # 物业申请需填写的信息
+    property_name = models.CharField('物业名称', max_length=200, blank=True, default='')
+    property_community = models.CharField('社区名称', max_length=200, blank=True, default='')
+    
+    # 审核信息
+    reviewed_by = models.ForeignKey(User, verbose_name='审核人', null=True, blank=True, on_delete=models.SET_NULL, related_name='reviewed_applications')
+    reviewed_at = models.DateTimeField('审核时间', null=True, blank=True)
+    reject_reason = models.TextField('拒绝原因', blank=True, default='')
+    
+    created_at = models.DateTimeField('申请时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+    
+    class Meta:
+        db_table = 'IdentityApplication'
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['status', 'created_at']),
+        ]
+        verbose_name = '身份申请'
+        verbose_name_plural = '身份申请'
+    
+    def __str__(self):
+        return f"{self.user.openid} 申请 {self.get_requested_identity_display()} - {self.get_status_display()}"
+    
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
