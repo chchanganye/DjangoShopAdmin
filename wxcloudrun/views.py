@@ -794,94 +794,28 @@ def admin_categories_detail(request, admin, category_id):
 # ---------------------- 2. 商户管理 CRUD ----------------------
 
 @admin_token_required
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET"])
 def admin_merchants(request, admin):
-    """商户管理 - GET列表 / POST创建"""
-    if request.method == 'GET':
-        qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
-        items = []
-        for m in qs:
-            items.append({
-                'openid': m.user.openid if m.user else None,
-                'merchant_id': m.merchant_id,
-                'merchant_name': m.merchant_name,
-                'title': m.title,
-                'description': m.description,
-                'banner_urls': m.banner_list(),
-                'category_id': m.category.id if m.category else None,
-                'category_name': m.category.name if m.category else None,
-                'contact_phone': m.contact_phone,
-                'address': m.address,
-                'positive_rating_percent': m.positive_rating_percent,
-                'daily_points': m.user.daily_points if m.user else 0,
-                'total_points': m.user.total_points if m.user else 0,
-            })
-        return json_ok({'total': len(items), 'list': items})
-    
-    # POST 创建
-    try:
-        body = json.loads(request.body.decode('utf-8'))
-    except Exception:
-        return json_err('请求体格式错误', status=400)
-    
-    openid = body.get('openid')
-    merchant_name = body.get('merchant_name')
-    
-    if not openid or not merchant_name:
-        return json_err('缺少参数 openid 或 merchant_name', status=400)
-    
-    try:
-        user = UserInfo.objects.get(openid=openid)
-        if user.identity_type != 'MERCHANT':
-            return json_err('该用户身份类型不是商户', status=400)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-    
-    # 检查是否已有商户档案
-    if hasattr(user, 'merchant_profile'):
-        return json_err('该用户已有商户档案', status=400)
-    
-    category_id = body.get('category_id')
-    category = None
-    if category_id:
-        try:
-            category = Category.objects.get(id=category_id)
-        except Category.DoesNotExist:
-            return json_err('分类不存在', status=404)
-    
-    banner_urls = body.get('banner_urls', [])
-    banner_urls_str = ','.join(banner_urls) if isinstance(banner_urls, list) else str(banner_urls) if banner_urls else ''
-    
-    try:
-        merchant = MerchantProfile.objects.create(
-            user=user,
-            merchant_name=merchant_name,
-            title=body.get('title', ''),
-            description=body.get('description', ''),
-            banner_urls=banner_urls_str,
-            category=category,
-            contact_phone=body.get('contact_phone', ''),
-            address=body.get('address', ''),
-            positive_rating_percent=body.get('positive_rating_percent', 0),
-        )
-        return json_ok({
-            'openid': merchant.user.openid,
-            'merchant_id': merchant.merchant_id,
-            'merchant_name': merchant.merchant_name,
-            'title': merchant.title,
-            'description': merchant.description,
-            'banner_urls': merchant.banner_list(),
-            'category_id': merchant.category.id if merchant.category else None,
-            'category_name': merchant.category.name if merchant.category else None,
-            'contact_phone': merchant.contact_phone,
-            'address': merchant.address,
-            'positive_rating_percent': merchant.positive_rating_percent,
-            'daily_points': merchant.user.daily_points,
-            'total_points': merchant.user.total_points,
-        }, status=201)
-    except Exception as e:
-        logger.error(f'创建商户失败: {str(e)}')
-        return json_err(f'创建失败: {str(e)}', status=400)
+    """商户管理 - GET列表（只读，通过用户列表创建）"""
+    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+    items = []
+    for m in qs:
+        items.append({
+            'openid': m.user.openid if m.user else None,
+            'merchant_id': m.merchant_id,
+            'merchant_name': m.merchant_name,
+            'title': m.title,
+            'description': m.description,
+            'banner_urls': m.banner_list(),
+            'category_id': m.category.id if m.category else None,
+            'category_name': m.category.name if m.category else None,
+            'contact_phone': m.contact_phone,
+            'address': m.address,
+            'positive_rating_percent': m.positive_rating_percent,
+            'daily_points': m.user.daily_points if m.user else 0,
+            'total_points': m.user.total_points if m.user else 0,
+        })
+    return json_ok({'total': len(items), 'list': items})
 
 
 @admin_token_required
@@ -960,87 +894,27 @@ def admin_merchants_detail(request, admin, openid):
 # ---------------------- 3. 物业管理 CRUD ----------------------
 
 @admin_token_required
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET"])
 def admin_properties(request, admin):
-    """物业管理 - GET列表 / POST创建"""
-    if request.method == 'GET':
-        qs = PropertyProfile.objects.select_related('user').all().order_by('id')
-        # 批量查询所有积分阈值，减少数据库查询
-        property_ids = [p.id for p in qs]
-        thresholds = {th.property.id: th.min_points for th in PointsThreshold.objects.select_related('property').filter(property_id__in=property_ids)}
-        
-        items = []
-        for p in qs:
-            min_points = thresholds.get(p.id, 0)
-            items.append({
-                'openid': p.user.openid if p.user else None,
-                'property_id': p.property_id,
-                'property_name': p.property_name,
-                'community_name': p.community_name,
-                'daily_points': p.user.daily_points if p.user else 0,
-                'total_points': p.user.total_points if p.user else 0,
-                'min_points': min_points,  # 积分阈值
-            })
-        return json_ok({'total': len(items), 'list': items})
+    """物业管理 - GET列表（只读，通过用户列表创建）"""
+    qs = PropertyProfile.objects.select_related('user').all().order_by('id')
+    # 批量查询所有积分阈值，减少数据库查询
+    property_ids = [p.id for p in qs]
+    thresholds = {th.property.id: th.min_points for th in PointsThreshold.objects.select_related('property').filter(property_id__in=property_ids)}
     
-    # POST 创建
-    try:
-        body = json.loads(request.body.decode('utf-8'))
-    except Exception:
-        return json_err('请求体格式错误', status=400)
-    
-    openid = body.get('openid')
-    property_name = body.get('property_name')
-    
-    if not openid or not property_name:
-        return json_err('缺少参数 openid 或 property_name', status=400)
-    
-    try:
-        user = UserInfo.objects.get(openid=openid)
-        if user.identity_type != 'PROPERTY':
-            return json_err('该用户身份类型不是物业', status=400)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-    
-    # 检查是否已有物业档案
-    if hasattr(user, 'property_profile'):
-        return json_err('该用户已有物业档案', status=400)
-    
-    try:
-        property_profile = PropertyProfile.objects.create(
-            user=user,
-            property_name=property_name,
-            community_name=body.get('community_name', ''),
-        )
-        
-        # 如果提供了积分阈值，创建或更新
-        min_points = body.get('min_points')
-        if min_points is not None:
-            PointsThreshold.objects.update_or_create(
-                property=property_profile,
-                defaults={'min_points': int(min_points)}
-            )
-        
-        # 获取积分阈值
-        min_points_value = 0
-        try:
-            if hasattr(property_profile, 'points_threshold'):
-                min_points_value = property_profile.points_threshold.min_points
-        except Exception:
-            pass
-        
-        return json_ok({
-            'openid': property_profile.user.openid,
-            'property_id': property_profile.property_id,
-            'property_name': property_profile.property_name,
-            'community_name': property_profile.community_name,
-            'daily_points': property_profile.user.daily_points,
-            'total_points': property_profile.user.total_points,
-            'min_points': min_points_value,
-        }, status=201)
-    except Exception as e:
-        logger.error(f'创建物业失败: {str(e)}')
-        return json_err(f'创建失败: {str(e)}', status=400)
+    items = []
+    for p in qs:
+        min_points = thresholds.get(p.id, 0)
+        items.append({
+            'openid': p.user.openid if p.user else None,
+            'property_id': p.property_id,
+            'property_name': p.property_name,
+            'community_name': p.community_name,
+            'daily_points': p.user.daily_points if p.user else 0,
+            'total_points': p.user.total_points if p.user else 0,
+            'min_points': min_points,  # 积分阈值
+        })
+    return json_ok({'total': len(items), 'list': items})
 
 
 @admin_token_required
@@ -1171,6 +1045,32 @@ def admin_users(request, admin):
             daily_points=body.get('daily_points', 0),
             total_points=body.get('total_points', 0),
         )
+        
+        # 根据身份类型自动创建对应的档案
+        if identity_type == 'MERCHANT':
+            # 创建商户档案
+            MerchantProfile.objects.create(
+                user=user,
+                merchant_name=body.get('merchant_name', ''),
+                description=body.get('merchant_description', ''),
+                address=body.get('merchant_address', ''),
+                phone=body.get('merchant_phone', ''),
+            )
+        elif identity_type == 'PROPERTY':
+            # 创建物业档案
+            property_profile = PropertyProfile.objects.create(
+                user=user,
+                property_name=body.get('property_name', ''),
+                community_name=body.get('community_name', ''),
+            )
+            # 如果提供了积分阈值，创建
+            min_points = body.get('min_points')
+            if min_points is not None:
+                PointsThreshold.objects.create(
+                    property=property_profile,
+                    min_points=int(min_points)
+                )
+        
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,

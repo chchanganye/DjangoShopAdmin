@@ -55,11 +55,11 @@ urlpatterns = (
     url(r'^api/admin/categories/(?P<category_id>\d+)/?$', views.admin_categories_detail),   # PUT/DELETE
 
     # 管理员-商户管理 CRUD（使用 openid）
-    url(r'^api/admin/merchants/?$', views.admin_merchants),                    # GET/POST
+    url(r'^api/admin/merchants/?$', views.admin_merchants),                    # GET（只读，通过用户列表创建）
     url(r'^api/admin/merchants/(?P<openid>[^/]+)/?$', views.admin_merchants_detail),   # PUT/DELETE
 
     # 管理员-物业管理 CRUD（使用 openid，包含积分阈值）
-    url(r'^api/admin/properties/?$', views.admin_properties),                  # GET/POST
+    url(r'^api/admin/properties/?$', views.admin_properties),                  # GET（只读，通过用户列表创建）
     url(r'^api/admin/properties/(?P<openid>[^/]+)/?$', views.admin_properties_detail), # PUT/DELETE
 
     # 管理员-用户管理 CRUD
