@@ -1054,7 +1054,7 @@ def admin_users(request, admin):
                 merchant_name=body.get('merchant_name', ''),
                 description=body.get('merchant_description', ''),
                 address=body.get('merchant_address', ''),
-                phone=body.get('merchant_phone', ''),
+                contact_phone=body.get('merchant_phone', ''),
             )
         elif identity_type == 'PROPERTY':
             # 创建物业档案
