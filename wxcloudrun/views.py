@@ -798,15 +798,34 @@ def admin_categories_detail(request, admin, category_id):
 def admin_merchants(request, admin):
     """商户管理 - GET列表（只读，通过用户列表创建）"""
     qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+    
+    # 收集所有横幅图文件ID
+    all_file_ids = []
+    for m in qs:
+        if m.banner_urls:
+            all_file_ids.extend([fid for fid in m.banner_urls.split(',') if fid and fid.startswith('cloud://')])
+    
+    # 批量获取临时URL
+    temp_urls = get_temp_file_urls(all_file_ids) if all_file_ids else {}
+    
     items = []
     for m in qs:
+        # 处理横幅图：返回 file_id 和对应的临时 URL
+        banner_list = [fid.strip() for fid in m.banner_urls.split(',') if fid.strip()] if m.banner_urls else []
+        banner_data = []
+        for file_id in banner_list:
+            banner_data.append({
+                'file_id': file_id,
+                'url': temp_urls.get(file_id, '') if file_id.startswith('cloud://') else file_id
+            })
+        
         items.append({
             'openid': m.user.openid if m.user else None,
             'merchant_id': m.merchant_id,
             'merchant_name': m.merchant_name,
             'title': m.title,
             'description': m.description,
-            'banner_urls': m.banner_list(),
+            'banner_urls': banner_data,  # 返回 [{file_id, url}, ...]
             'category_id': m.category.id if m.category else None,
             'category_name': m.category.name if m.category else None,
             'contact_phone': m.contact_phone,
@@ -835,6 +854,14 @@ def admin_merchants_detail(request, admin, openid):
         return json_err('商户不存在', status=404)
     
     if request.method == 'DELETE':
+        # 删除关联的横幅图云文件
+        if merchant.banner_urls:
+            old_file_ids = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip() and fid.startswith('cloud://')]
+            if old_file_ids:
+                try:
+                    delete_cloud_files(old_file_ids)
+                except WxOpenApiError as exc:
+                    logger.warning(f"删除商户横幅图失败: {old_file_ids}, error={exc}")
         merchant.delete()
         return json_ok({'openid': openid, 'deleted': True})
     
@@ -850,9 +877,28 @@ def admin_merchants_detail(request, admin, openid):
         merchant.title = body.get('title', '')
     if 'description' in body:
         merchant.description = body.get('description', '')
-    if 'banner_urls' in body:
-        banner_urls = body['banner_urls']
-        merchant.banner_urls = ','.join(banner_urls) if isinstance(banner_urls, list) else str(banner_urls) if banner_urls else ''
+    if 'banner_file_ids' in body:
+        # 处理横幅图更新：删除旧图，保存新图
+        old_file_ids = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip() and fid.startswith('cloud://')] if merchant.banner_urls else []
+        new_file_ids = body['banner_file_ids']
+        
+        # 转换新文件ID为字符串
+        if isinstance(new_file_ids, list):
+            new_banner_str = ','.join(new_file_ids)
+        else:
+            new_banner_str = str(new_file_ids) if new_file_ids else ''
+        
+        # 找出需要删除的文件（旧文件中不在新文件中的）
+        new_file_ids_set = set(new_file_ids) if isinstance(new_file_ids, list) else set([new_file_ids]) if new_file_ids else set()
+        files_to_delete = [fid for fid in old_file_ids if fid not in new_file_ids_set]
+        
+        if files_to_delete:
+            try:
+                delete_cloud_files(files_to_delete)
+            except WxOpenApiError as exc:
+                logger.warning(f"删除旧商户横幅图失败: {files_to_delete}, error={exc}")
+        
+        merchant.banner_urls = new_banner_str
     if 'category_id' in body:
         category_id = body.get('category_id')
         if category_id:
@@ -871,13 +917,24 @@ def admin_merchants_detail(request, admin, openid):
     
     try:
         merchant.save()
+        
+        # 获取横幅图临时URL
+        banner_list = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip()] if merchant.banner_urls else []
+        temp_urls = get_temp_file_urls([fid for fid in banner_list if fid.startswith('cloud://')]) if banner_list else {}
+        banner_data = []
+        for file_id in banner_list:
+            banner_data.append({
+                'file_id': file_id,
+                'url': temp_urls.get(file_id, '') if file_id.startswith('cloud://') else file_id
+            })
+        
         return json_ok({
             'openid': merchant.user.openid,
             'merchant_id': merchant.merchant_id,
             'merchant_name': merchant.merchant_name,
             'title': merchant.title,
             'description': merchant.description,
-            'banner_urls': merchant.banner_list(),
+            'banner_urls': banner_data,  # 返回 [{file_id, url}, ...]
             'category_id': merchant.category.id if merchant.category else None,
             'category_name': merchant.category.name if merchant.category else None,
             'contact_phone': merchant.contact_phone,
@@ -993,13 +1050,35 @@ def admin_users(request, admin):
     """用户管理 - GET列表 / POST创建"""
     if request.method == 'GET':
         qs = UserInfo.objects.select_related('owner_property').all().order_by('id')
+        
+        # 收集所有头像文件ID
+        avatar_file_ids = [u.avatar_url for u in qs if u.avatar_url and u.avatar_url.startswith('cloud://')]
+        
+        # 批量获取临时URL
+        temp_urls = get_temp_file_urls(avatar_file_ids) if avatar_file_ids else {}
+        
         items = []
         for u in qs:
+            # 处理头像：返回 file_id 和对应的临时 URL
+            avatar_data = None
+            if u.avatar_url:
+                if u.avatar_url.startswith('cloud://'):
+                    avatar_data = {
+                        'file_id': u.avatar_url,
+                        'url': temp_urls.get(u.avatar_url, '')
+                    }
+                else:
+                    # 兼容旧数据（如果有直接URL的）
+                    avatar_data = {
+                        'file_id': '',
+                        'url': u.avatar_url
+                    }
+            
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
                 'identity_type': u.identity_type,
-                'avatar_url': u.avatar_url,
+                'avatar': avatar_data,  # 返回 {file_id, url} 或 null
                 'phone_number': u.phone_number,
                 'daily_points': u.daily_points,
                 'total_points': u.total_points,
@@ -1035,11 +1114,14 @@ def admin_users(request, admin):
         except PropertyProfile.DoesNotExist:
             return json_err('物业不存在', status=404)
     
+    # 处理头像文件ID
+    avatar_file_id = body.get('avatar_file_id', '')
+    
     try:
         user = UserInfo.objects.create(
             openid=openid,
             identity_type=identity_type,
-            avatar_url=body.get('avatar_url', ''),
+            avatar_url=avatar_file_id,  # 存储云文件ID
             phone_number=body.get('phone_number', ''),
             owner_property=owner_property,
             daily_points=body.get('daily_points', 0),
@@ -1048,13 +1130,48 @@ def admin_users(request, admin):
         
         # 根据身份类型自动创建对应的档案
         if identity_type == 'MERCHANT':
+            # 验证商户必填字段
+            merchant_name = body.get('merchant_name')
+            if not merchant_name:
+                return json_err('商户名称为必填项', status=400)
+            
+            category_id = body.get('category_id')
+            if not category_id:
+                return json_err('商户分类为必填项', status=400)
+            
+            contact_phone = body.get('merchant_phone')
+            if not contact_phone:
+                return json_err('商户电话为必填项', status=400)
+            
+            address = body.get('merchant_address')
+            if not address:
+                return json_err('商户地址为必填项', status=400)
+            
+            banner_file_ids = body.get('banner_file_ids')
+            if not banner_file_ids:
+                return json_err('商户横幅展示图为必填项', status=400)
+            
+            # 验证分类是否存在
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return json_err('分类不存在', status=404)
+            
+            # 处理横幅文件ID（支持数组或逗号分隔字符串）
+            if isinstance(banner_file_ids, list):
+                banner_urls_str = ','.join(banner_file_ids)
+            else:
+                banner_urls_str = str(banner_file_ids)
+            
             # 创建商户档案
             MerchantProfile.objects.create(
                 user=user,
-                merchant_name=body.get('merchant_name', ''),
+                merchant_name=merchant_name,
                 description=body.get('merchant_description', ''),
-                address=body.get('merchant_address', ''),
-                contact_phone=body.get('merchant_phone', ''),
+                address=address,
+                contact_phone=contact_phone,
+                banner_urls=banner_urls_str,
+                category=category,
             )
         elif identity_type == 'PROPERTY':
             # 创建物业档案
@@ -1097,6 +1214,12 @@ def admin_users_detail(request, admin, system_id):
         return json_err('用户不存在', status=404)
     
     if request.method == 'DELETE':
+        # 删除用户头像云文件
+        if user.avatar_url and user.avatar_url.startswith('cloud://'):
+            try:
+                delete_cloud_files([user.avatar_url])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除用户头像失败: {user.avatar_url}, error={exc}")
         user.delete()
         return json_ok({'system_id': system_id, 'deleted': True})
     
@@ -1106,8 +1229,19 @@ def admin_users_detail(request, admin, system_id):
     except Exception:
         return json_err('请求体格式错误', status=400)
     
-    if 'avatar_url' in body:
-        user.avatar_url = body.get('avatar_url', '')
+    if 'avatar_file_id' in body:
+        # 处理头像更新：删除旧头像，保存新头像
+        old_avatar = user.avatar_url
+        new_avatar = body.get('avatar_file_id', '')
+        
+        # 如果新旧头像不同，且旧头像是云文件，则删除
+        if new_avatar != old_avatar and old_avatar and old_avatar.startswith('cloud://'):
+            try:
+                delete_cloud_files([old_avatar])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除旧用户头像失败: {old_avatar}, error={exc}")
+        
+        user.avatar_url = new_avatar
     if 'phone_number' in body:
         user.phone_number = body.get('phone_number', '')
     if 'identity_type' in body:
@@ -1131,10 +1265,26 @@ def admin_users_detail(request, admin, system_id):
     
     try:
         user.save()
+        
+        # 获取头像临时URL
+        avatar_data = None
+        if user.avatar_url:
+            if user.avatar_url.startswith('cloud://'):
+                temp_urls = get_temp_file_urls([user.avatar_url])
+                avatar_data = {
+                    'file_id': user.avatar_url,
+                    'url': temp_urls.get(user.avatar_url, '')
+                }
+            else:
+                avatar_data = {
+                    'file_id': '',
+                    'url': user.avatar_url
+                }
+        
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
-            'avatar_url': user.avatar_url,
+            'avatar': avatar_data,  # 返回 {file_id, url} 或 null
             'phone_number': user.phone_number,
             'identity_type': user.identity_type,
             'daily_points': user.daily_points,

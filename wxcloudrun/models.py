@@ -62,7 +62,7 @@ def _generate_seq(prefix: str, model_cls, field_name: str, width: int = 3):
 class UserInfo(models.Model):
     system_id = models.CharField('系统编号', max_length=32, unique=True)  # 身份前缀+序列号，如 OWNER_001
     openid = models.CharField('OpenID', max_length=128, unique=True)
-    avatar_url = models.CharField('头像URL', max_length=512, blank=True, default='')
+    avatar_url = models.CharField('头像云文件ID', max_length=512, blank=True, default='')  # 存储云文件ID，如：cloud://xxx.jpg
     phone_number = models.CharField('手机号', max_length=32, blank=True, default='')
     identity_type = models.CharField('身份类型', max_length=20, choices=IDENTITY_CHOICES)
 
@@ -137,7 +137,7 @@ class MerchantProfile(models.Model):
     merchant_name = models.CharField('商户名称', max_length=200)
     title = models.CharField('标题', max_length=200, blank=True, default='')  # 展示标题
     description = models.TextField('简介', blank=True, default='')
-    banner_urls = models.TextField('轮播图URL(逗号分隔)', blank=True, default='')  # 逗号分隔的URL
+    banner_urls = models.TextField('轮播图云文件ID(逗号分隔)', blank=True, default='')  # 逗号分隔的云文件ID，如：cloud://xxx,cloud://yyy
     category = models.ForeignKey(Category, verbose_name='分类', null=True, blank=True, on_delete=models.SET_NULL)
     contact_phone = models.CharField('联系电话', max_length=32, blank=True, default='')
     address = models.CharField('地址', max_length=300, blank=True, default='')
