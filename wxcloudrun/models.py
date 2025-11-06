@@ -137,7 +137,7 @@ class MerchantProfile(models.Model):
     merchant_name = models.CharField('商户名称', max_length=200)
     title = models.CharField('标题', max_length=200, blank=True, default='')  # 展示标题
     description = models.TextField('简介', blank=True, default='')
-    banner_urls = models.TextField('轮播图云文件ID(逗号分隔)', blank=True, default='')  # 逗号分隔的云文件ID，如：cloud://xxx,cloud://yyy
+    banner_url = models.CharField('横幅展示图云文件ID', max_length=255, blank=True, default='')  # 存储单张图片的云文件ID，如：cloud://xxx.jpg
     category = models.ForeignKey(Category, verbose_name='分类', null=True, blank=True, on_delete=models.SET_NULL)
     contact_phone = models.CharField('联系电话', max_length=32, blank=True, default='')
     address = models.CharField('地址', max_length=300, blank=True, default='')
@@ -163,11 +163,6 @@ class MerchantProfile(models.Model):
             self.merchant_id = _generate_seq('MERCHANT', MerchantProfile, 'merchant_id')
         self.updated_at = datetime.now()
         super().save(*args, **kwargs)
-
-    def banner_list(self):
-        if not self.banner_urls:
-            return []
-        return [s for s in self.banner_urls.split(',') if s]
 
 
 # 积分阈值配置

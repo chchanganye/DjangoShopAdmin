@@ -470,14 +470,29 @@ def merchants_list(request):
     try:
         # 查询所有商户，即使没有关联 user 也返回
         qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+        
+        # 收集所有横幅图文件ID
+        all_file_ids = [m.banner_url for m in qs if m.banner_url and m.banner_url.startswith('cloud://')]
+        
+        # 批量获取临时URL
+        temp_urls = get_temp_file_urls(all_file_ids) if all_file_ids else {}
+        
         items = []
         for m in qs:
+            # 处理横幅图：返回临时URL（小程序端只需要URL）
+            banner_url = ''
+            if m.banner_url:
+                if m.banner_url.startswith('cloud://'):
+                    banner_url = temp_urls.get(m.banner_url, '')
+                else:
+                    banner_url = m.banner_url
+            
             items.append({
                 'merchant_id': m.merchant_id,
                 'merchant_name': m.merchant_name,
                 'title': m.title,
                 'description': m.description,
-                'banner_urls': m.banner_list(),
+                'banner_url': banner_url,  # 返回临时URL字符串
                 'category': m.category.name if m.category else None,
                 'category_id': m.category.id if m.category else None,
                 'contact_phone': m.contact_phone,
@@ -499,12 +514,21 @@ def merchant_detail(request, merchant_id):
     except MerchantProfile.DoesNotExist:
         return json_err('商户不存在', status=404)
 
+    # 处理横幅图：返回临时URL（小程序端只需要URL）
+    banner_url = ''
+    if merchant.banner_url:
+        if merchant.banner_url.startswith('cloud://'):
+            temp_urls = get_temp_file_urls([merchant.banner_url])
+            banner_url = temp_urls.get(merchant.banner_url, '')
+        else:
+            banner_url = merchant.banner_url
+
     data = {
         'merchant_id': merchant.merchant_id,
         'merchant_name': merchant.merchant_name,
         'title': merchant.title,
         'description': merchant.description,
-        'banner_urls': merchant.banner_list(),
+        'banner_url': banner_url,  # 返回临时URL字符串
         'category_id': merchant.category.id if merchant.category else None,
         'category_name': merchant.category.name if merchant.category else None,
         'contact_phone': merchant.contact_phone,
@@ -800,24 +824,20 @@ def admin_merchants(request, admin):
     qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
     
     # 收集所有横幅图文件ID
-    all_file_ids = []
-    for m in qs:
-        if m.banner_urls:
-            all_file_ids.extend([fid for fid in m.banner_urls.split(',') if fid and fid.startswith('cloud://')])
+    all_file_ids = [m.banner_url for m in qs if m.banner_url and m.banner_url.startswith('cloud://')]
     
     # 批量获取临时URL
     temp_urls = get_temp_file_urls(all_file_ids) if all_file_ids else {}
     
     items = []
     for m in qs:
-        # 处理横幅图：返回 file_id 和对应的临时 URL
-        banner_list = [fid.strip() for fid in m.banner_urls.split(',') if fid.strip()] if m.banner_urls else []
-        banner_data = []
-        for file_id in banner_list:
-            banner_data.append({
-                'file_id': file_id,
-                'url': temp_urls.get(file_id, '') if file_id.startswith('cloud://') else file_id
-            })
+        # 处理横幅图：返回 {file_id, url} 或 null
+        banner_data = None
+        if m.banner_url:
+            banner_data = {
+                'file_id': m.banner_url,
+                'url': temp_urls.get(m.banner_url, '') if m.banner_url.startswith('cloud://') else m.banner_url
+            }
         
         items.append({
             'openid': m.user.openid if m.user else None,
@@ -825,7 +845,7 @@ def admin_merchants(request, admin):
             'merchant_name': m.merchant_name,
             'title': m.title,
             'description': m.description,
-            'banner_urls': banner_data,  # 返回 [{file_id, url}, ...]
+            'banner': banner_data,  # 返回 {file_id, url} 或 null
             'category_id': m.category.id if m.category else None,
             'category_name': m.category.name if m.category else None,
             'contact_phone': m.contact_phone,
@@ -855,13 +875,11 @@ def admin_merchants_detail(request, admin, openid):
     
     if request.method == 'DELETE':
         # 删除关联的横幅图云文件
-        if merchant.banner_urls:
-            old_file_ids = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip() and fid.startswith('cloud://')]
-            if old_file_ids:
-                try:
-                    delete_cloud_files(old_file_ids)
-                except WxOpenApiError as exc:
-                    logger.warning(f"删除商户横幅图失败: {old_file_ids}, error={exc}")
+        if merchant.banner_url and merchant.banner_url.startswith('cloud://'):
+            try:
+                delete_cloud_files([merchant.banner_url])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除商户横幅图失败: {merchant.banner_url}, error={exc}")
         merchant.delete()
         return json_ok({'openid': openid, 'deleted': True})
     
@@ -877,28 +895,19 @@ def admin_merchants_detail(request, admin, openid):
         merchant.title = body.get('title', '')
     if 'description' in body:
         merchant.description = body.get('description', '')
-    if 'banner_file_ids' in body:
+    if 'banner_file_id' in body:
         # 处理横幅图更新：删除旧图，保存新图
-        old_file_ids = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip() and fid.startswith('cloud://')] if merchant.banner_urls else []
-        new_file_ids = body['banner_file_ids']
+        new_file_id = body['banner_file_id']
+        old_file_id = merchant.banner_url
         
-        # 转换新文件ID为字符串
-        if isinstance(new_file_ids, list):
-            new_banner_str = ','.join(new_file_ids)
-        else:
-            new_banner_str = str(new_file_ids) if new_file_ids else ''
-        
-        # 找出需要删除的文件（旧文件中不在新文件中的）
-        new_file_ids_set = set(new_file_ids) if isinstance(new_file_ids, list) else set([new_file_ids]) if new_file_ids else set()
-        files_to_delete = [fid for fid in old_file_ids if fid not in new_file_ids_set]
-        
-        if files_to_delete:
+        # 如果新旧文件不同，删除旧文件
+        if old_file_id and old_file_id.startswith('cloud://') and old_file_id != new_file_id:
             try:
-                delete_cloud_files(files_to_delete)
+                delete_cloud_files([old_file_id])
             except WxOpenApiError as exc:
-                logger.warning(f"删除旧商户横幅图失败: {files_to_delete}, error={exc}")
+                logger.warning(f"删除旧商户横幅图失败: {old_file_id}, error={exc}")
         
-        merchant.banner_urls = new_banner_str
+        merchant.banner_url = new_file_id if new_file_id else ''
     if 'category_id' in body:
         category_id = body.get('category_id')
         if category_id:
@@ -919,14 +928,13 @@ def admin_merchants_detail(request, admin, openid):
         merchant.save()
         
         # 获取横幅图临时URL
-        banner_list = [fid.strip() for fid in merchant.banner_urls.split(',') if fid.strip()] if merchant.banner_urls else []
-        temp_urls = get_temp_file_urls([fid for fid in banner_list if fid.startswith('cloud://')]) if banner_list else {}
-        banner_data = []
-        for file_id in banner_list:
-            banner_data.append({
-                'file_id': file_id,
-                'url': temp_urls.get(file_id, '') if file_id.startswith('cloud://') else file_id
-            })
+        banner_data = None
+        if merchant.banner_url:
+            temp_urls = get_temp_file_urls([merchant.banner_url]) if merchant.banner_url.startswith('cloud://') else {}
+            banner_data = {
+                'file_id': merchant.banner_url,
+                'url': temp_urls.get(merchant.banner_url, '') if merchant.banner_url.startswith('cloud://') else merchant.banner_url
+            }
         
         return json_ok({
             'openid': merchant.user.openid,
@@ -934,7 +942,7 @@ def admin_merchants_detail(request, admin, openid):
             'merchant_name': merchant.merchant_name,
             'title': merchant.title,
             'description': merchant.description,
-            'banner_urls': banner_data,  # 返回 [{file_id, url}, ...]
+            'banner': banner_data,  # 返回 {file_id, url} 或 null
             'category_id': merchant.category.id if merchant.category else None,
             'category_name': merchant.category.name if merchant.category else None,
             'contact_phone': merchant.contact_phone,
@@ -1147,8 +1155,8 @@ def admin_users(request, admin):
             if not address:
                 return json_err('商户地址为必填项', status=400)
             
-            banner_file_ids = body.get('banner_file_ids')
-            if not banner_file_ids:
+            banner_file_id = body.get('banner_file_id')
+            if not banner_file_id:
                 return json_err('商户横幅展示图为必填项', status=400)
             
             # 验证分类是否存在
@@ -1157,12 +1165,6 @@ def admin_users(request, admin):
             except Category.DoesNotExist:
                 return json_err('分类不存在', status=404)
             
-            # 处理横幅文件ID（支持数组或逗号分隔字符串）
-            if isinstance(banner_file_ids, list):
-                banner_urls_str = ','.join(banner_file_ids)
-            else:
-                banner_urls_str = str(banner_file_ids)
-            
             # 创建商户档案
             MerchantProfile.objects.create(
                 user=user,
@@ -1170,7 +1172,7 @@ def admin_users(request, admin):
                 description=body.get('merchant_description', ''),
                 address=address,
                 contact_phone=contact_phone,
-                banner_urls=banner_urls_str,
+                banner_url=banner_file_id,
                 category=category,
             )
         elif identity_type == 'PROPERTY':
