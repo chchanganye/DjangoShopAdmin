@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('wxcloudrun', '0005_auto_20251105_2250'),
+        ('wxcloudrun', '0004_identity_application'),
     ]
 
     operations = [
