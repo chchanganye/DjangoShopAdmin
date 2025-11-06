@@ -19,6 +19,7 @@ from wxcloudrun.models import (
     PointsRecord,
     PointsShareSetting,
     IdentityApplication,
+    AccessLog,
 )
 from rest_framework.authtoken.models import Token
 
@@ -238,9 +239,26 @@ def get_points_share_setting():
 @openid_required
 @require_http_methods(["GET"])
 def user_login(request):
-    """小程序登录接口：自动创建用户，返回用户身份和是否首次登录"""
+    """小程序登录接口：自动创建用户，返回用户身份和是否首次登录，并记录访问日志"""
     openid = _get_openid(request)
     user = UserInfo.objects.get(openid=openid)  # _ensure_userinfo_exists 已在装饰器里确保存在
+    
+    # 记录访问日志（用于统计访问量）
+    today = date.today()
+    access_log, created = AccessLog.objects.get_or_create(
+        openid=openid,
+        access_date=today,
+        defaults={
+            'access_count': 1,
+            'first_access_at': datetime.now(),
+            'last_access_at': datetime.now(),
+        }
+    )
+    if not created:
+        # 已存在记录，增加访问次数
+        access_log.access_count += 1
+        access_log.last_access_at = datetime.now()
+        access_log.save()
     
     # 判断是否首次登录：identity_type 仍为默认 OWNER 且没有其他扩展字段
     is_first_login = (
@@ -1092,6 +1110,8 @@ def admin_users(request, admin):
                 'total_points': u.total_points,
                 'owner_property_id': u.owner_property.property_id if u.owner_property else None,
                 'owner_property_name': u.owner_property.property_name if u.owner_property else None,
+                'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S') if u.created_at else None,
+                'updated_at': u.updated_at.strftime('%Y-%m-%d %H:%M:%S') if u.updated_at else None,
             })
         return json_ok({'total': len(items), 'list': items})
 
@@ -1293,6 +1313,8 @@ def admin_users_detail(request, admin, system_id):
             'total_points': user.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
             'owner_property_name': user.owner_property.property_name if user.owner_property else None,
+            'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else None,
+            'updated_at': user.updated_at.strftime('%Y-%m-%d %H:%M:%S') if user.updated_at else None,
         })
     except Exception as e:
         logger.error(f'更新用户失败: {str(e)}')
@@ -1583,4 +1605,212 @@ def admin_application_reject(request, admin):
         'status': 'REJECTED',
         'message': '申请已拒绝'
     })
+
+
+# ---------------------- 9. 管理员统计接口 ----------------------
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_statistics_overview(request, admin):
+    """管理员统计概览：总用户数、今日新增、今日交易额、总交易额"""
+    from django.db.models import Sum, Count
+    from datetime import datetime, date
+    
+    today = date.today()
+    
+    # 1. 总用户数
+    total_users = UserInfo.objects.count()
+    
+    # 2. 今日新增用户数（根据created_at判断）
+    today_new_users = UserInfo.objects.filter(
+        created_at__date=today
+    ).count()
+    
+    # 3. 今日交易额（根据今日积分变更记录计算绝对值总和）
+    today_transaction = PointsRecord.objects.filter(
+        created_at__date=today
+    ).aggregate(
+        total=Sum('change')
+    )['total'] or 0
+    today_transaction_amount = abs(today_transaction)
+    
+    # 4. 总交易额（历史所有积分变更绝对值总和）
+    total_transaction = PointsRecord.objects.aggregate(
+        total=Sum('change')
+    )['total'] or 0
+    total_transaction_amount = abs(total_transaction)
+    
+    # 5. 总访问量（所有AccessLog的access_count总和）
+    total_visits = AccessLog.objects.aggregate(
+        total=Sum('access_count')
+    )['total'] or 0
+    
+    # 6. 日访问量（今日AccessLog的access_count总和）
+    today_visits = AccessLog.objects.filter(
+        access_date=today
+    ).aggregate(
+        total=Sum('access_count')
+    )['total'] or 0
+    
+    data = {
+        'total_users': total_users,
+        'today_new_users': today_new_users,
+        'today_transaction_amount': today_transaction_amount,
+        'total_transaction_amount': total_transaction_amount,
+        'total_visits': total_visits,
+        'today_visits': today_visits,
+    }
+    
+    return json_ok(data)
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_statistics_by_time(request, admin):
+    """按时间维度统计：支持按年月、按周统计用户数和交易额
+    
+    Query参数：
+    - type: 'month' 或 'week'（必填）
+    - year: 年份，如 2025（必填）
+    - month: 月份，1-12（type=month或week时必填）
+    - week: 周数，1-5（type=week时必填，表示该月第几周）
+    """
+    from django.db.models import Sum, Count
+    from datetime import datetime, timedelta
+    import calendar
+    
+    stat_type = request.GET.get('type')
+    year = request.GET.get('year')
+    month = request.GET.get('month')
+    week = request.GET.get('week')
+    
+    if not stat_type or stat_type not in ['month', 'week']:
+        return json_err('参数 type 必须为 month 或 week', status=400)
+    
+    if not year:
+        return json_err('参数 year 为必填项', status=400)
+    
+    try:
+        year = int(year)
+    except ValueError:
+        return json_err('参数 year 必须为整数', status=400)
+    
+    if stat_type == 'month':
+        # 按月统计
+        if not month:
+            return json_err('参数 month 为必填项', status=400)
+        
+        try:
+            month = int(month)
+            if month < 1 or month > 12:
+                raise ValueError
+        except ValueError:
+            return json_err('参数 month 必须为1-12的整数', status=400)
+        
+        # 计算该月第一天和最后一天
+        first_day = date(year, month, 1)
+        last_day_num = calendar.monthrange(year, month)[1]
+        last_day = date(year, month, last_day_num)
+        
+        # 统计该月的数据
+        users_count = UserInfo.objects.filter(
+            created_at__date__gte=first_day,
+            created_at__date__lte=last_day
+        ).count()
+        
+        transaction_sum = PointsRecord.objects.filter(
+            created_at__date__gte=first_day,
+            created_at__date__lte=last_day
+        ).aggregate(total=Sum('change'))['total'] or 0
+        transaction_amount = abs(transaction_sum)
+        
+        visits_count = AccessLog.objects.filter(
+            access_date__gte=first_day,
+            access_date__lte=last_day
+        ).aggregate(total=Sum('access_count'))['total'] or 0
+        
+        data = {
+            'type': 'month',
+            'year': year,
+            'month': month,
+            'start_date': str(first_day),
+            'end_date': str(last_day),
+            'users_count': users_count,
+            'transaction_amount': transaction_amount,
+            'visits_count': visits_count,
+        }
+        
+        return json_ok(data)
+    
+    elif stat_type == 'week':
+        # 按周统计（某月的第几周）
+        if not month:
+            return json_err('参数 month 为必填项', status=400)
+        if not week:
+            return json_err('参数 week 为必填项', status=400)
+        
+        try:
+            month = int(month)
+            week = int(week)
+            if month < 1 or month > 12:
+                raise ValueError('month')
+            if week < 1 or week > 5:
+                raise ValueError('week')
+        except ValueError as e:
+            if str(e) == 'month':
+                return json_err('参数 month 必须为1-12的整数', status=400)
+            elif str(e) == 'week':
+                return json_err('参数 week 必须为1-5的整数', status=400)
+            else:
+                return json_err('参数格式错误', status=400)
+        
+        # 计算该月第一天
+        first_day_of_month = date(year, month, 1)
+        
+        # 计算第几周的起始日期（简单算法：每周7天，第1周从1号开始）
+        week_start_day = 1 + (week - 1) * 7
+        week_end_day = week_start_day + 6
+        
+        # 获取该月最后一天
+        last_day_num = calendar.monthrange(year, month)[1]
+        
+        # 确保不超出月份范围
+        if week_start_day > last_day_num:
+            return json_err(f'{year}年{month}月没有第{week}周', status=400)
+        
+        week_end_day = min(week_end_day, last_day_num)
+        
+        start_date = date(year, month, week_start_day)
+        end_date = date(year, month, week_end_day)
+        
+        # 统计该周的数据
+        users_count = UserInfo.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date
+        ).count()
+        
+        transaction_sum = PointsRecord.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date
+        ).aggregate(total=Sum('change'))['total'] or 0
+        transaction_amount = abs(transaction_sum)
+        
+        visits_count = AccessLog.objects.filter(
+            access_date__gte=start_date,
+            access_date__lte=end_date
+        ).aggregate(total=Sum('access_count'))['total'] or 0
+        
+        data = {
+            'type': 'week',
+            'year': year,
+            'month': month,
+            'week': week,
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'users_count': users_count,
+            'transaction_amount': transaction_amount,
+            'visits_count': visits_count,
+        }
+        
+        return json_ok(data)
 

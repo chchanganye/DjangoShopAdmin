@@ -80,4 +80,8 @@ urlpatterns = (
     url(r'^api/admin/applications/?$', views.admin_applications_list),         # GET 获取申请列表
     url(r'^api/admin/applications/approve/?$', views.admin_application_approve),   # POST 批准申请
     url(r'^api/admin/applications/reject/?$', views.admin_application_reject),     # POST 拒绝申请
+    
+    # 管理员-统计接口
+    url(r'^api/admin/statistics/overview/?$', views.admin_statistics_overview),     # GET 统计概览
+    url(r'^api/admin/statistics/by-time/?$', views.admin_statistics_by_time),       # GET 按时间维度统计
 )

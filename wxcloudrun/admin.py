@@ -8,6 +8,7 @@ from .models import (
     PointsRecord,
     ApiPermission,
     IdentityApplication,
+    AccessLog,
 )
 
 
@@ -83,6 +84,15 @@ class IdentityApplicationAdmin(admin.ModelAdmin):
     list_filter = ("status", "requested_identity", "created_at")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(AccessLog)
+class AccessLogAdmin(admin.ModelAdmin):
+    list_display = ("openid", "access_date", "access_count", "first_access_at", "last_access_at")
+    search_fields = ("openid",)
+    list_filter = ("access_date",)
+    ordering = ("-access_date", "-access_count")
+    readonly_fields = ("first_access_at", "last_access_at")
 
 
 # 自定义 Admin 站点文案

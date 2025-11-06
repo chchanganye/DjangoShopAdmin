@@ -295,3 +295,27 @@ class IdentityApplication(models.Model):
     def save(self, *args, **kwargs):
         self.updated_at = datetime.now()
         super().save(*args, **kwargs)
+
+
+# 访问统计（用于统计登录/访问次数）
+class AccessLog(models.Model):
+    """记录用户访问/登录日志，用于统计访问量"""
+    
+    openid = models.CharField('用户OpenID', max_length=128, db_index=True)
+    access_date = models.DateField('访问日期', default=date.today, db_index=True)
+    access_count = models.IntegerField('当日访问次数', default=1)
+    first_access_at = models.DateTimeField('首次访问时间', default=datetime.now)
+    last_access_at = models.DateTimeField('最后访问时间', default=datetime.now)
+    
+    class Meta:
+        db_table = 'AccessLog'
+        unique_together = [('openid', 'access_date')]  # 每个用户每天一条记录
+        indexes = [
+            models.Index(fields=['access_date']),
+            models.Index(fields=['openid', 'access_date']),
+        ]
+        verbose_name = '访问日志'
+        verbose_name_plural = '访问日志'
+    
+    def __str__(self):
+        return f"{self.openid} - {self.access_date} ({self.access_count}次)"
