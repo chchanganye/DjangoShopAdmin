@@ -45,21 +45,28 @@ def user_login(request):
         and not user.owner_property
     )
     
-    # 获取头像临时URL
-    avatar_url = ''
+    # 处理头像：返回 file_id 和临时 URL
+    avatar_data = None
     if user.avatar_url:
         if user.avatar_url.startswith('cloud://'):
             temp_urls = get_temp_file_urls([user.avatar_url])
-            avatar_url = temp_urls.get(user.avatar_url, '')
+            avatar_data = {
+                'file_id': user.avatar_url,
+                'url': temp_urls.get(user.avatar_url, '')
+            }
         else:
-            avatar_url = user.avatar_url
+            # 兼容直接URL（如微信头像）
+            avatar_data = {
+                'file_id': '',
+                'url': user.avatar_url
+            }
     
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
         'identity_type': user.identity_type,
-        'avatar_url': avatar_url,  # 返回临时访问地址
+        'avatar': avatar_data,  # 返回 {file_id, url} 或 null
         'phone_number': user.phone_number,
         'is_first_login': is_first_login,
     }
@@ -127,21 +134,28 @@ def user_update_profile(request):
     try:
         user.save()
         
-        # 获取头像临时URL（用于前端显示）
-        avatar_url = ''
+        # 处理头像：返回 file_id 和临时 URL
+        avatar_data = None
         if user.avatar_url:
             if user.avatar_url.startswith('cloud://'):
                 temp_urls = get_temp_file_urls([user.avatar_url])
-                avatar_url = temp_urls.get(user.avatar_url, '')
+                avatar_data = {
+                    'file_id': user.avatar_url,
+                    'url': temp_urls.get(user.avatar_url, '')
+                }
             else:
-                avatar_url = user.avatar_url
+                # 兼容直接URL（如微信头像）
+                avatar_data = {
+                    'file_id': '',
+                    'url': user.avatar_url
+                }
         
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
             'nickname': user.nickname,
             'identity_type': user.identity_type,
-            'avatar_url': avatar_url,  # 返回临时访问地址
+            'avatar': avatar_data,  # 返回 {file_id, url} 或 null
             'phone_number': user.phone_number,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
         })
