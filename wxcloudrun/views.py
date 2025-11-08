@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 import requests
 from django.http import JsonResponse
@@ -487,7 +487,7 @@ def users_list(request, admin):
 def merchants_list(request):
     try:
         # 查询所有商户，即使没有关联 user 也返回
-        qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
         
         # 收集所有横幅图文件ID
         all_file_ids = [m.banner_url for m in qs if m.banner_url and m.banner_url.startswith('cloud://')]
@@ -495,8 +495,8 @@ def merchants_list(request):
         # 批量获取临时URL
         temp_urls = get_temp_file_urls(all_file_ids) if all_file_ids else {}
         
-        items = []
-        for m in qs:
+    items = []
+    for m in qs:
             # 处理横幅图：返回临时URL（小程序端只需要URL）
             banner_url = ''
             if m.banner_url:
@@ -505,17 +505,17 @@ def merchants_list(request):
                 else:
                     banner_url = m.banner_url
             
-            items.append({
+        items.append({
                 'merchant_id': m.merchant_id,
                 'merchant_name': m.merchant_name,
                 'title': m.title,
-                'description': m.description,
+            'description': m.description,
                 'banner_url': banner_url,  # 返回临时URL字符串
-                'category': m.category.name if m.category else None,
+            'category': m.category.name if m.category else None,
                 'category_id': m.category.id if m.category else None,
-                'contact_phone': m.contact_phone,
-                'address': m.address,
-                'positive_rating_percent': m.positive_rating_percent,
+            'contact_phone': m.contact_phone,
+            'address': m.address,
+            'positive_rating_percent': m.positive_rating_percent,
             })
         logger.info(f'查询商户列表，共 {len(items)} 条')
         return json_ok({'total': len(items), 'list': items})
@@ -793,11 +793,11 @@ def admin_categories_detail(request, admin, category_id):
         category = Category.objects.get(id=category_id)
     except Category.DoesNotExist:
         return json_err('分类不存在', status=404)
-    
+
     if request.method == 'DELETE':
         category.delete()
         return json_ok({'id': category_id, 'deleted': True})
-    
+
     # PUT 更新
     try:
         body = json.loads(request.body.decode('utf-8'))
@@ -933,7 +933,7 @@ def admin_merchants_detail(request, admin, openid):
                 merchant.category = Category.objects.get(id=category_id)
             except Category.DoesNotExist:
                 return json_err('分类不存在', status=404)
-        else:
+            else:
             merchant.category = None
     if 'contact_phone' in body:
         merchant.contact_phone = body.get('contact_phone', '')
@@ -1008,7 +1008,7 @@ def admin_properties_detail(request, admin, openid):
         user = UserInfo.objects.get(openid=openid)
         if user.identity_type != 'PROPERTY':
             return json_err('该用户不是物业身份', status=400)
-    except UserInfo.DoesNotExist:
+        except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
     
     try:
@@ -1054,7 +1054,7 @@ def admin_properties_detail(request, admin, openid):
         except Exception:
             pass
         
-        return json_ok({
+    return json_ok({
             'openid': property_profile.user.openid,
             'property_id': property_profile.property_id,
             'property_name': property_profile.property_name,
@@ -1062,7 +1062,7 @@ def admin_properties_detail(request, admin, openid):
             'daily_points': property_profile.user.daily_points,
             'total_points': property_profile.user.total_points,
             'min_points': min_points_value,
-        })
+    })
     except Exception as e:
         logger.error(f'更新物业失败: {str(e)}')
         return json_err(f'更新失败: {str(e)}', status=400)
@@ -1093,7 +1093,7 @@ def admin_users(request, admin):
                         'file_id': u.avatar_url,
                         'url': temp_urls.get(u.avatar_url, '')
                     }
-                else:
+    else:
                     # 兼容旧数据（如果有直接URL的）
                     avatar_data = {
                         'file_id': '',
@@ -1116,10 +1116,10 @@ def admin_users(request, admin):
         return json_ok({'total': len(items), 'list': items})
 
     # POST 创建
-    try:
-        body = json.loads(request.body.decode('utf-8'))
-    except Exception:
-        return json_err('请求体格式错误', status=400)
+        try:
+            body = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            return json_err('请求体格式错误', status=400)
     
     openid = body.get('openid')
     identity_type = body.get('identity_type')
@@ -1529,7 +1529,6 @@ def admin_application_approve(request, admin):
     requested_identity = application.requested_identity
     
     try:
-        from datetime import datetime
         from django.db import transaction
         
         with transaction.atomic():
@@ -1593,7 +1592,6 @@ def admin_application_reject(request, admin):
     if application.status != 'PENDING':
         return json_err(f'该申请状态为 {application.get_status_display()}，无法拒绝', status=400)
     
-    from datetime import datetime
     application.status = 'REJECTED'
     application.reviewed_by = admin
     application.reviewed_at = datetime.now()
@@ -1614,7 +1612,6 @@ def admin_application_reject(request, admin):
 def admin_statistics_overview(request, admin):
     """管理员统计概览：总用户数、今日新增、今日交易额、总交易额"""
     from django.db.models import Sum, Count
-    from datetime import datetime, date
     
     today = date.today()
     
@@ -1676,7 +1673,6 @@ def admin_statistics_by_time(request, admin):
     - week: 周数，1-5（type=week时必填，表示该月第几周）
     """
     from django.db.models import Sum, Count
-    from datetime import datetime, timedelta
     import calendar
     
     stat_type = request.GET.get('type')
