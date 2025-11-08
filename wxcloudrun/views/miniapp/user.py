@@ -8,6 +8,8 @@ from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
 from wxcloudrun.models import UserInfo, PropertyProfile, IdentityApplication, AccessLog
+from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
+from wxcloudrun.exceptions import WxOpenApiError
 
 
 logger = logging.getLogger('log')
@@ -43,11 +45,21 @@ def user_login(request):
         and not user.owner_property
     )
     
+    # 获取头像临时URL
+    avatar_url = ''
+    if user.avatar_url:
+        if user.avatar_url.startswith('cloud://'):
+            temp_urls = get_temp_file_urls([user.avatar_url])
+            avatar_url = temp_urls.get(user.avatar_url, '')
+        else:
+            avatar_url = user.avatar_url
+    
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
+        'nickname': user.nickname,
         'identity_type': user.identity_type,
-        'avatar_url': user.avatar_url,
+        'avatar_url': avatar_url,  # 返回临时访问地址
         'phone_number': user.phone_number,
         'is_first_login': is_first_login,
     }
@@ -78,8 +90,24 @@ def user_update_profile(request):
     except Exception:
         return json_err('请求体格式错误', status=400)
     
-    if 'avatar_url' in body:
-        user.avatar_url = body['avatar_url']
+    # 更新昵称
+    if 'nickname' in body:
+        user.nickname = body.get('nickname', '')
+    
+    # 更新头像（支持云文件ID）
+    if 'avatar_file_id' in body:
+        new_avatar = body.get('avatar_file_id', '')
+        old_avatar = user.avatar_url
+        
+        # 如果新旧头像不同，且旧头像是云文件，则删除旧头像
+        if new_avatar != old_avatar and old_avatar and old_avatar.startswith('cloud://'):
+            try:
+                delete_cloud_files([old_avatar])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除旧用户头像失败: {old_avatar}, error={exc}")
+        
+        user.avatar_url = new_avatar
+    
     if 'phone_number' in body:
         user.phone_number = body['phone_number']
     
@@ -98,11 +126,22 @@ def user_update_profile(request):
     
     try:
         user.save()
+        
+        # 获取头像临时URL（用于前端显示）
+        avatar_url = ''
+        if user.avatar_url:
+            if user.avatar_url.startswith('cloud://'):
+                temp_urls = get_temp_file_urls([user.avatar_url])
+                avatar_url = temp_urls.get(user.avatar_url, '')
+            else:
+                avatar_url = user.avatar_url
+        
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
+            'nickname': user.nickname,
             'identity_type': user.identity_type,
-            'avatar_url': user.avatar_url,
+            'avatar_url': avatar_url,  # 返回临时访问地址
             'phone_number': user.phone_number,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
         })

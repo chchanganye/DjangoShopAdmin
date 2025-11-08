@@ -62,6 +62,7 @@ def _generate_seq(prefix: str, model_cls, field_name: str, width: int = 3):
 class UserInfo(models.Model):
     system_id = models.CharField('系统编号', max_length=32, unique=True)  # 身份前缀+序列号，如 OWNER_001
     openid = models.CharField('OpenID', max_length=128, unique=True)
+    nickname = models.CharField('用户昵称', max_length=100, blank=True, default='')
     avatar_url = models.CharField('头像云文件ID', max_length=512, blank=True, default='')  # 存储云文件ID，如：cloud://xxx.jpg
     phone_number = models.CharField('手机号', max_length=32, blank=True, default='')
     identity_type = models.CharField('身份类型', max_length=20, choices=IDENTITY_CHOICES)
