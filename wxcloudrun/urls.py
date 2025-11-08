@@ -14,36 +14,50 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from wxcloudrun import views
+from wxcloudrun.views import (
+    # 小程序端视图
+    user_login,
+    user_update_profile,
+    identity_apply,
+    properties_public_list,
+    categories_list,
+    merchants_list,
+    merchant_detail,
+    properties_list,
+    owners_by_property,
+    threshold_query,
+    points_change,
+)
+from wxcloudrun import views  # 管理员视图
 from django.conf.urls import url
 
 urlpatterns = (
     # ========== 小程序端接口 ==========
     
     # 用户登录与身份管理
-    url(r'^api/user/login/?$', views.user_login),                          # GET 登录/获取用户信息
-    url(r'^api/user/profile/?$', views.user_update_profile),               # PUT 更新个人信息（业主绑定物业）
-    url(r'^api/user/identity/apply/?$', views.identity_apply),             # POST 申请商户/物业身份
-    url(r'^api/properties/public/?$', views.properties_public_list),       # GET 获取物业列表（供业主选择）
+    url(r'^api/user/login/?$', user_login),                          # GET 登录/获取用户信息
+    url(r'^api/user/profile/?$', user_update_profile),               # PUT 更新个人信息（业主绑定物业）
+    url(r'^api/user/identity/apply/?$', identity_apply),             # POST 申请商户/物业身份
+    url(r'^api/properties/public/?$', properties_public_list),       # GET 获取物业列表（供业主选择）
     
     # 商品分类
-    url(r'^api/categories/?$', views.categories_list),
+    url(r'^api/categories/?$', categories_list),
 
     # 商户信息
-    url(r'^api/merchants/?$', views.merchants_list),
-    url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', views.merchant_detail),
+    url(r'^api/merchants/?$', merchants_list),
+    url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', merchant_detail),
 
     # 物业信息
-    url(r'^api/properties/?$', views.properties_list),
+    url(r'^api/properties/?$', properties_list),
 
     # 业主信息（按物业ID）
-    url(r'^api/owners/by_property/(?P<property_id>[^/]+)/?$', views.owners_by_property),
+    url(r'^api/owners/by_property/(?P<property_id>[^/]+)/?$', owners_by_property),
 
     # 积分阈值查询（小程序端，使用 openid）
-    url(r'^api/thresholds/(?P<openid>[^/]+)/?$', views.threshold_query),
+    url(r'^api/thresholds/(?P<openid>[^/]+)/?$', threshold_query),
 
     # 积分变更
-    url(r'^api/points/change/?$', views.points_change),
+    url(r'^api/points/change/?$', points_change),
 
     # ========== 管理员端接口 ==========
     

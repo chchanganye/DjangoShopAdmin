@@ -1,0 +1,271 @@
+"""管理员用户管理视图"""
+import json
+import logging
+from django.views.decorators.http import require_http_methods
+
+from wxcloudrun.decorators import admin_token_required
+from wxcloudrun.utils.responses import json_ok, json_err
+from wxcloudrun.exceptions import WxOpenApiError
+from wxcloudrun.models import (
+    Category,
+    UserInfo,
+    MerchantProfile,
+    PropertyProfile,
+    PointsThreshold,
+)
+from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
+
+
+logger = logging.getLogger('log')
+
+
+@admin_token_required
+@require_http_methods(["GET", "POST"])
+def admin_users(request, admin):
+    """用户管理 - GET列表 / POST创建"""
+    if request.method == 'GET':
+        qs = UserInfo.objects.select_related('owner_property').all().order_by('id')
+        
+        # 收集所有头像文件ID
+        avatar_file_ids = [u.avatar_url for u in qs if u.avatar_url and u.avatar_url.startswith('cloud://')]
+        
+        # 批量获取临时URL
+        temp_urls = get_temp_file_urls(avatar_file_ids) if avatar_file_ids else {}
+        
+        items = []
+        for u in qs:
+            # 处理头像：返回 file_id 和对应的临时 URL
+            avatar_data = None
+            if u.avatar_url:
+                if u.avatar_url.startswith('cloud://'):
+                    avatar_data = {
+                        'file_id': u.avatar_url,
+                        'url': temp_urls.get(u.avatar_url, '')
+                    }
+                else:
+                    # 兼容旧数据（如果有直接URL的）
+                    avatar_data = {
+                        'file_id': '',
+                        'url': u.avatar_url
+                    }
+            
+            items.append({
+                'system_id': u.system_id,
+                'openid': u.openid,
+                'identity_type': u.identity_type,
+                'avatar': avatar_data,
+                'phone_number': u.phone_number,
+                'daily_points': u.daily_points,
+                'total_points': u.total_points,
+                'owner_property_id': u.owner_property.property_id if u.owner_property else None,
+                'owner_property_name': u.owner_property.property_name if u.owner_property else None,
+                'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S') if u.created_at else None,
+                'updated_at': u.updated_at.strftime('%Y-%m-%d %H:%M:%S') if u.updated_at else None,
+            })
+        return json_ok({'total': len(items), 'list': items})
+
+    # POST 创建
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    openid = body.get('openid')
+    identity_type = body.get('identity_type')
+    
+    if not openid or not identity_type:
+        return json_err('缺少参数 openid 或 identity_type', status=400)
+    
+    if identity_type not in ['OWNER', 'PROPERTY', 'MERCHANT', 'ADMIN']:
+        return json_err('无效的身份类型', status=400)
+    
+    # 检查 openid 是否已存在
+    if UserInfo.objects.filter(openid=openid).exists():
+        return json_err('该 OpenID 已存在', status=400)
+    
+    owner_property_id = body.get('owner_property_id')
+    owner_property = None
+    if owner_property_id and identity_type == 'OWNER':
+        try:
+            owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
+        except PropertyProfile.DoesNotExist:
+            return json_err('物业不存在', status=404)
+    
+    # 处理头像文件ID
+    avatar_file_id = body.get('avatar_file_id', '')
+    
+    try:
+        user = UserInfo.objects.create(
+            openid=openid,
+            identity_type=identity_type,
+            avatar_url=avatar_file_id,
+            phone_number=body.get('phone_number', ''),
+            owner_property=owner_property,
+            daily_points=body.get('daily_points', 0),
+            total_points=body.get('total_points', 0),
+        )
+        
+        # 根据身份类型自动创建对应的档案
+        if identity_type == 'MERCHANT':
+            # 验证商户必填字段
+            merchant_name = body.get('merchant_name')
+            if not merchant_name:
+                return json_err('商户名称为必填项', status=400)
+            
+            category_id = body.get('category_id')
+            if not category_id:
+                return json_err('商户分类为必填项', status=400)
+            
+            contact_phone = body.get('merchant_phone')
+            if not contact_phone:
+                return json_err('商户电话为必填项', status=400)
+            
+            address = body.get('merchant_address')
+            if not address:
+                return json_err('商户地址为必填项', status=400)
+            
+            banner_file_id = body.get('banner_file_id')
+            if not banner_file_id:
+                return json_err('商户横幅展示图为必填项', status=400)
+            
+            # 验证分类是否存在
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return json_err('分类不存在', status=404)
+            
+            # 创建商户档案
+            MerchantProfile.objects.create(
+                user=user,
+                merchant_name=merchant_name,
+                description=body.get('merchant_description', ''),
+                address=address,
+                contact_phone=contact_phone,
+                banner_url=banner_file_id,
+                category=category,
+            )
+        elif identity_type == 'PROPERTY':
+            # 创建物业档案
+            property_profile = PropertyProfile.objects.create(
+                user=user,
+                property_name=body.get('property_name', ''),
+                community_name=body.get('community_name', ''),
+            )
+            # 如果提供了积分阈值，创建
+            min_points = body.get('min_points')
+            if min_points is not None:
+                PointsThreshold.objects.create(
+                    property=property_profile,
+                    min_points=int(min_points)
+                )
+        
+        return json_ok({
+            'system_id': user.system_id,
+            'openid': user.openid,
+            'avatar_url': user.avatar_url,
+            'phone_number': user.phone_number,
+            'identity_type': user.identity_type,
+            'daily_points': user.daily_points,
+            'total_points': user.total_points,
+            'owner_property_id': user.owner_property.property_id if user.owner_property else None,
+            'owner_property_name': user.owner_property.property_name if user.owner_property else None,
+        }, status=201)
+    except Exception as e:
+        logger.error(f'创建用户失败: {str(e)}')
+        return json_err(f'创建失败: {str(e)}', status=400)
+
+
+@admin_token_required
+@require_http_methods(["PUT", "DELETE"])
+def admin_users_detail(request, admin, system_id):
+    """用户管理 - PUT更新 / DELETE删除"""
+    try:
+        user = UserInfo.objects.select_related('owner_property').get(system_id=system_id)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+    
+    if request.method == 'DELETE':
+        # 删除用户头像云文件
+        if user.avatar_url and user.avatar_url.startswith('cloud://'):
+            try:
+                delete_cloud_files([user.avatar_url])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除用户头像失败: {user.avatar_url}, error={exc}")
+        user.delete()
+        return json_ok({'system_id': system_id, 'deleted': True})
+    
+    # PUT 更新
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    
+    if 'avatar_file_id' in body:
+        # 处理头像更新：删除旧头像，保存新头像
+        old_avatar = user.avatar_url
+        new_avatar = body.get('avatar_file_id', '')
+        
+        # 如果新旧头像不同，且旧头像是云文件，则删除
+        if new_avatar != old_avatar and old_avatar and old_avatar.startswith('cloud://'):
+            try:
+                delete_cloud_files([old_avatar])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除旧用户头像失败: {old_avatar}, error={exc}")
+        
+        user.avatar_url = new_avatar
+    if 'phone_number' in body:
+        user.phone_number = body.get('phone_number', '')
+    if 'identity_type' in body:
+        identity_type = body['identity_type']
+        if identity_type not in ['OWNER', 'PROPERTY', 'MERCHANT', 'ADMIN']:
+            return json_err('无效的身份类型', status=400)
+        user.identity_type = identity_type
+    if 'owner_property_id' in body:
+        owner_property_id = body.get('owner_property_id')
+        if owner_property_id:
+            try:
+                user.owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
+            except PropertyProfile.DoesNotExist:
+                return json_err('物业不存在', status=404)
+        else:
+            user.owner_property = None
+    if 'daily_points' in body:
+        user.daily_points = int(body['daily_points'])
+    if 'total_points' in body:
+        user.total_points = int(body['total_points'])
+    
+    try:
+        user.save()
+        
+        # 获取头像临时URL
+        avatar_data = None
+        if user.avatar_url:
+            if user.avatar_url.startswith('cloud://'):
+                temp_urls = get_temp_file_urls([user.avatar_url])
+                avatar_data = {
+                    'file_id': user.avatar_url,
+                    'url': temp_urls.get(user.avatar_url, '')
+                }
+            else:
+                avatar_data = {
+                    'file_id': '',
+                    'url': user.avatar_url
+                }
+        
+        return json_ok({
+            'system_id': user.system_id,
+            'openid': user.openid,
+            'avatar': avatar_data,
+            'phone_number': user.phone_number,
+            'identity_type': user.identity_type,
+            'daily_points': user.daily_points,
+            'total_points': user.total_points,
+            'owner_property_id': user.owner_property.property_id if user.owner_property else None,
+            'owner_property_name': user.owner_property.property_name if user.owner_property else None,
+            'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else None,
+            'updated_at': user.updated_at.strftime('%Y-%m-%d %H:%M:%S') if user.updated_at else None,
+        })
+    except Exception as e:
+        logger.error(f'更新用户失败: {str(e)}')
+        return json_err(f'更新失败: {str(e)}', status=400)
+
