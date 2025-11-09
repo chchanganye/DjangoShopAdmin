@@ -2,9 +2,8 @@
 # 小程序端视图
 from wxcloudrun.views.miniapp import (
     user_login,
-    user_update_profile,
+    user_profile_handler,
     identity_apply,
-    user_profile,
     properties_public_list,
     categories_list,
     merchants_list,

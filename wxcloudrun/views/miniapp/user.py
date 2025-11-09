@@ -298,6 +298,16 @@ def identity_apply(request):
         return json_err(f'提交失败: {str(exc)}', status=400)
 
 
+def user_profile_handler(request):
+    """处理用户信息的 GET 和 PUT 请求"""
+    if request.method == 'GET':
+        return user_profile(request)
+    elif request.method == 'PUT':
+        return user_update_profile(request)
+    else:
+        return json_err('不支持的请求方法', status=405)
+
+
 @openid_required
 @require_http_methods(["GET"])
 def user_profile(request):
