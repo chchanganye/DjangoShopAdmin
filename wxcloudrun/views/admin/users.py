@@ -52,6 +52,7 @@ def admin_users(request, admin):
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
+                'nickname': u.nickname,
                 'identity_type': u.identity_type,
                 'avatar': avatar_data,
                 'phone_number': u.phone_number,
@@ -162,6 +163,7 @@ def admin_users(request, admin):
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
+            'nickname': user.nickname,
             'avatar_url': user.avatar_url,
             'phone_number': user.phone_number,
             'identity_type': user.identity_type,
@@ -200,6 +202,8 @@ def admin_users_detail(request, admin, system_id):
     except Exception:
         return json_err('请求体格式错误', status=400)
     
+    if 'nickname' in body:
+        user.nickname = body.get('nickname', '')
     if 'avatar_file_id' in body:
         # 处理头像更新：删除旧头像，保存新头像
         old_avatar = user.avatar_url
@@ -255,6 +259,7 @@ def admin_users_detail(request, admin, system_id):
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
+            'nickname': user.nickname,
             'avatar': avatar_data,
             'phone_number': user.phone_number,
             'identity_type': user.identity_type,

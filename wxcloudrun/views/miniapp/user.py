@@ -110,15 +110,37 @@ def user_update_profile(request):
     
     # 更新头像（支持云文件ID）
     if 'avatar_file_id' in body:
-        new_avatar = body.get('avatar_file_id', '')
+        new_avatar = body.get('avatar_file_id', '').strip()
         old_avatar = user.avatar_url
         
+        # 验证头像格式：必须是云文件ID或空字符串
+        if new_avatar:
+            # 拒绝本地临时文件路径
+            if '127.0.0.1' in new_avatar or 'localhost' in new_avatar or '__tmp__' in new_avatar:
+                logger.warning(f"拒绝本地临时文件路径: {new_avatar}")
+                return json_err(
+                    '不能使用本地临时文件路径。请先调用 /api/storage/upload-credential 获取上传凭证，'
+                    '将文件上传到云存储后，再使用返回的 file_id（cloud:// 开头）',
+                    status=400
+                )
+            
+            # 验证必须是云文件ID格式（cloud:// 开头）
+            if not new_avatar.startswith('cloud://'):
+                logger.warning(f"无效的头像文件ID: {new_avatar}")
+                return json_err(
+                    '头像文件ID格式不正确，必须是云存储文件ID（cloud:// 开头）。'
+                    '请先调用 /api/storage/upload-credential 获取上传凭证上传文件',
+                    status=400
+                )
+        
         # 如果新旧头像不同，且旧头像是云文件，则删除旧头像
-        if new_avatar != old_avatar and old_avatar and old_avatar.startswith('cloud://'):
-            try:
-                delete_cloud_files([old_avatar])
-            except WxOpenApiError as exc:
-                logger.warning(f"删除旧用户头像失败: {old_avatar}, error={exc}")
+        if new_avatar != old_avatar:
+            if old_avatar and old_avatar.startswith('cloud://'):
+                try:
+                    delete_cloud_files([old_avatar])
+                    logger.info(f"已删除旧用户头像: {old_avatar}")
+                except WxOpenApiError as exc:
+                    logger.warning(f"删除旧用户头像失败: {old_avatar}, error={exc}")
         
         user.avatar_url = new_avatar
     
