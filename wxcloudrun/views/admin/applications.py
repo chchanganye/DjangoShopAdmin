@@ -32,6 +32,7 @@ def admin_applications_list(request, admin):
             'system_id': app.user.system_id,
             'requested_identity': app.requested_identity,
             'status': app.status,
+            'owner_property_id': app.owner_property_id,  # 申请时填写的物业ID（商户申请时必填）
             'merchant_name': app.merchant_name,
             'merchant_description': app.merchant_description,
             'merchant_address': app.merchant_address,
@@ -86,12 +87,27 @@ def admin_application_approve(request, admin):
                     address=application.merchant_address,
                     contact_phone=application.merchant_phone,
                 )
+                
+                # 商户申请通过时，自动绑定所在物业（如果申请时填写了物业ID）
+                if application.owner_property_id:
+                    try:
+                        property_profile = PropertyProfile.objects.get(property_id=application.owner_property_id)
+                        user.owner_property = property_profile
+                        user.save()
+                    except PropertyProfile.DoesNotExist:
+                        logger.warning(f"商户申请的物业不存在: {application.owner_property_id}")
+                
             elif requested_identity == 'PROPERTY':
-                PropertyProfile.objects.create(
+                # 创建物业档案
+                property_profile = PropertyProfile.objects.create(
                     user=user,
                     property_name=application.property_name,
                     community_name=application.property_community,
                 )
+                
+                # 物业申请通过时，自动绑定自己的物业
+                user.owner_property = property_profile
+                user.save()
             
             # 更新申请状态
             application.status = 'APPROVED'
