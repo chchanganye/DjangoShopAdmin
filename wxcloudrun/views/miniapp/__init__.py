@@ -6,7 +6,13 @@ from wxcloudrun.views.miniapp.user import (
     properties_public_list,
 )
 from wxcloudrun.views.miniapp.category import categories_list
-from wxcloudrun.views.miniapp.merchant import merchants_list, merchant_detail, merchant_update_banner
+from wxcloudrun.views.miniapp.merchant import (
+    merchants_list,
+    merchant_detail,
+    merchant_update_banner,
+    merchant_book,
+    merchant_favorite,
+)
 from wxcloudrun.views.miniapp.property import properties_list, owners_by_property
 from wxcloudrun.views.miniapp.points import threshold_query, points_change
 
@@ -19,9 +25,10 @@ __all__ = [
     'merchants_list',
     'merchant_detail',
     'merchant_update_banner',
+    'merchant_book',
+    'merchant_favorite',
     'properties_list',
     'owners_by_property',
     'threshold_query',
     'points_change',
 ]
-
