@@ -4,6 +4,8 @@ from .models import (
     UserInfo,
     PropertyProfile,
     MerchantProfile,
+    MerchantFavorite,
+    MerchantBooking,
     PointsThreshold,
     PointsRecord,
     ApiPermission,
@@ -51,6 +53,8 @@ class MerchantProfileAdmin(admin.ModelAdmin):
         "category",
         "positive_rating_percent",
         "contact_phone",
+        "open_hours",
+        "avg_score",
         "created_at",
     )
     search_fields = ("merchant_id", "merchant_name")
@@ -68,6 +72,20 @@ class PointsRecordAdmin(admin.ModelAdmin):
     list_display = ("user", "change", "created_at")
     search_fields = ("user__system_id", "user__openid")
     list_filter = ("created_at",)
+
+
+@admin.register(MerchantFavorite)
+class MerchantFavoriteAdmin(admin.ModelAdmin):
+    list_display = ("merchant", "user", "created_at")
+    search_fields = ("merchant__merchant_name", "merchant__merchant_id", "user__openid", "user__system_id")
+    list_filter = ("created_at",)
+
+
+@admin.register(MerchantBooking)
+class MerchantBookingAdmin(admin.ModelAdmin):
+    list_display = ("merchant", "user", "service_id", "appointment_time", "status", "created_at")
+    search_fields = ("merchant__merchant_name", "merchant__merchant_id", "user__openid", "user__system_id", "service_id")
+    list_filter = ("status", "appointment_time")
 
 
 @admin.register(ApiPermission)

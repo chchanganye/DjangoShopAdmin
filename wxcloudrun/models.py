@@ -143,6 +143,10 @@ class MerchantProfile(models.Model):
     contact_phone = models.CharField('联系电话', max_length=32, blank=True, default='')
     address = models.CharField('地址', max_length=300, blank=True, default='')
     positive_rating_percent = models.IntegerField('好评率(%)', default=0)  # 0-100
+    open_hours = models.CharField('营业时间', max_length=255, blank=True, default='')
+    gallery = models.JSONField('图集', default=list, blank=True)
+    rating_count = models.PositiveIntegerField('评分次数', default=0)
+    avg_score = models.DecimalField('平均评分', max_digits=3, decimal_places=1, default=0)
 
     created_at = models.DateTimeField('创建时间', default=datetime.now)
     updated_at = models.DateTimeField('更新时间', default=datetime.now)
@@ -162,6 +166,59 @@ class MerchantProfile(models.Model):
     def save(self, *args, **kwargs):
         if not self.merchant_id:
             self.merchant_id = _generate_seq('MERCHANT', MerchantProfile, 'merchant_id')
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
+class MerchantFavorite(models.Model):
+    merchant = models.ForeignKey(MerchantProfile, verbose_name='商户', on_delete=models.CASCADE, related_name='favorites')
+    user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='merchant_favorites')
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'MerchantFavorite'
+        unique_together = ('merchant', 'user')
+        indexes = [
+            models.Index(fields=['merchant', 'user']),
+            models.Index(fields=['user']),
+        ]
+        verbose_name = '商户收藏'
+        verbose_name_plural = '商户收藏'
+
+    def __str__(self):
+        return f"{self.user.system_id} -> {self.merchant.merchant_name}"
+
+
+class MerchantBooking(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', '待处理'),
+        ('CONFIRMED', '已确认'),
+        ('CANCELLED', '已取消'),
+        ('COMPLETED', '已完成'),
+    )
+
+    merchant = models.ForeignKey(MerchantProfile, verbose_name='商户', on_delete=models.CASCADE, related_name='bookings')
+    user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='merchant_bookings')
+    service_id = models.CharField('服务ID', max_length=64)
+    appointment_time = models.DateTimeField('预约时间')
+    remark = models.CharField('备注', max_length=500, blank=True, default='')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'MerchantBooking'
+        indexes = [
+            models.Index(fields=['merchant', 'appointment_time']),
+            models.Index(fields=['user']),
+        ]
+        verbose_name = '商户预约'
+        verbose_name_plural = '商户预约'
+
+    def __str__(self):
+        return f"{self.merchant.merchant_name}预约({self.appointment_time})"
+
+    def save(self, *args, **kwargs):
         self.updated_at = datetime.now()
         super().save(*args, **kwargs)
 

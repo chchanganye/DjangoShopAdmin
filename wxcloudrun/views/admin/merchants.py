@@ -1,6 +1,7 @@
 """管理员商户管理视图"""
 import json
 import logging
+from decimal import Decimal
 from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import admin_token_required
@@ -47,6 +48,10 @@ def admin_merchants(request, admin):
             'contact_phone': m.contact_phone,
             'address': m.address,
             'positive_rating_percent': m.positive_rating_percent,
+            'open_hours': m.open_hours,
+            'gallery': m.gallery or [],
+            'rating_count': m.rating_count,
+            'avg_score': float(m.avg_score) if m.avg_score is not None else 0,
             'daily_points': m.user.daily_points if m.user else 0,
             'total_points': m.user.total_points if m.user else 0,
         })
@@ -119,6 +124,23 @@ def admin_merchants_detail(request, admin, openid):
         merchant.address = body.get('address', '')
     if 'positive_rating_percent' in body:
         merchant.positive_rating_percent = body.get('positive_rating_percent', 0)
+    if 'open_hours' in body:
+        merchant.open_hours = body.get('open_hours', '').strip()
+    if 'gallery' in body:
+        gallery = body.get('gallery') or []
+        if not isinstance(gallery, list):
+            return json_err('gallery 必须为数组', status=400)
+        merchant.gallery = [str(item) for item in gallery]
+    if 'rating_count' in body:
+        try:
+            merchant.rating_count = max(0, int(body.get('rating_count', 0)))
+        except (TypeError, ValueError):
+            return json_err('rating_count 必须为整数', status=400)
+    if 'avg_score' in body:
+        try:
+            merchant.avg_score = Decimal(str(body.get('avg_score', 0)))
+        except Exception:
+            return json_err('avg_score 必须为数值', status=400)
     
     try:
         merchant.save()
@@ -144,6 +166,10 @@ def admin_merchants_detail(request, admin, openid):
             'contact_phone': merchant.contact_phone,
             'address': merchant.address,
             'positive_rating_percent': merchant.positive_rating_percent,
+            'open_hours': merchant.open_hours,
+            'gallery': merchant.gallery or [],
+            'rating_count': merchant.rating_count,
+            'avg_score': float(merchant.avg_score),
             'daily_points': merchant.user.daily_points,
             'total_points': merchant.user.total_points,
         })
