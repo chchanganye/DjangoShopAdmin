@@ -2,19 +2,23 @@
 import json
 import logging
 from datetime import datetime
-from django.utils import timezone
+
+from django.db.models import Q
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import MerchantProfile, UserInfo, MerchantFavorite, MerchantBooking
+from wxcloudrun.models import MerchantProfile, UserInfo
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 from wxcloudrun.exceptions import WxOpenApiError
 
 
 logger = logging.getLogger('log')
+
+MAX_PAGE_SIZE = 10
+DEFAULT_PAGE_SIZE = 10
 
 
 def _collect_temp_urls(file_ids):
@@ -41,31 +45,35 @@ def _resolve_gallery(gallery, temp_urls):
     return resolved
 
 
-def _parse_iso_datetime(value):
-    if not value:
+def _parse_cursor(cursor: str):
+    if not cursor:
         return None
-    if isinstance(value, datetime):
-        dt = value
-    else:
-        text = str(value).strip()
-        dt = parse_datetime(text)
-        if not dt and text.endswith('Z'):
-            dt = parse_datetime(text[:-1])
-        if not dt:
-            try:
-                dt = datetime.fromisoformat(text)
-            except ValueError:
-                return None
-    if dt and dt.tzinfo:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
+    parts = cursor.split('#', 1)
+    if len(parts) != 2:
+        return None
+    ts_str, pk_str = parts
+    dt = parse_datetime(ts_str)
+    if not dt:
+        try:
+            dt = datetime.fromisoformat(ts_str)
+        except ValueError:
+            return None
+    try:
+        pk_val = int(pk_str)
+    except (TypeError, ValueError):
+        return None
+    return dt, pk_val
+
+
+def _build_cursor(obj: MerchantProfile):
+    return f"{obj.updated_at.isoformat()}#{obj.id}"
 
 
 @openid_required
 @require_http_methods(["GET"])
 def merchants_list(request):
     """获取商户列表"""
-    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('id')
+    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('-updated_at', '-id')
     category_param = request.GET.get('categoryId') or request.GET.get('category_id')
     category_value = None
     if category_param:
@@ -75,13 +83,38 @@ def merchants_list(request):
             return json_err('categoryId 必须为数字', status=400)
         qs = qs.filter(category_id=category_value)
 
-    merchants = list(qs)
+    limit_param = request.GET.get('limit')
+    page_size = DEFAULT_PAGE_SIZE
+    if limit_param:
+        try:
+            page_size = int(limit_param)
+        except (TypeError, ValueError):
+            return json_err('limit 必须为数字', status=400)
+    if page_size < 1:
+        page_size = 1
+    if page_size > MAX_PAGE_SIZE:
+        page_size = MAX_PAGE_SIZE
+
+    cursor_param = request.GET.get('cursor', '').strip()
+    cursor_filter = _parse_cursor(cursor_param) if cursor_param else None
+    if cursor_param and not cursor_filter:
+        return json_err('cursor 无效', status=400)
+    if cursor_filter:
+        cursor_dt, cursor_pk = cursor_filter
+        qs = qs.filter(
+            Q(updated_at__lt=cursor_dt)
+            | Q(updated_at=cursor_dt, id__lt=cursor_pk)
+        )
+
+    merchants = list(qs[: page_size + 1])
     try:
         all_file_ids = [m.banner_url for m in merchants if m.banner_url and m.banner_url.startswith('cloud://')]
         temp_urls = _collect_temp_urls(all_file_ids)
 
+        has_more = len(merchants) > page_size
+        sliced = merchants[:page_size]
         items = []
-        for m in merchants:
+        for m in sliced:
             banner_url = _resolve_file_id(m.banner_url, temp_urls)
             items.append({
                 'merchant_id': m.merchant_id,
@@ -99,12 +132,19 @@ def merchants_list(request):
                 'rating_count': m.rating_count,
                 'avg_score': float(m.avg_score),
             })
-        logger.info(f'查询商户列表，共 {len(items)} 条 category={category_value}')
-        return json_ok({'total': len(items), 'list': items})
+        logger.info(f'查询商户列表，共 {len(items)} 条 category={category_value} cursor={cursor_param}')
+        next_cursor = _build_cursor(sliced[-1]) if has_more and sliced else None
+        return json_ok({
+            'list': items,
+            'has_more': has_more,
+            'next_cursor': next_cursor,
+        })
     except WxOpenApiError as e:
         logger.error(f"获取商户横幅图临时URL失败: {e}")
+        has_more = len(merchants) > page_size
+        sliced = merchants[:page_size]
         items = []
-        for m in merchants:
+        for m in sliced:
             items.append({
                 'merchant_id': m.merchant_id,
                 'merchant_name': m.merchant_name,
@@ -121,7 +161,12 @@ def merchants_list(request):
                 'rating_count': m.rating_count,
                 'avg_score': float(m.avg_score),
             })
-        return json_ok({'total': len(items), 'list': items})
+        next_cursor = _build_cursor(sliced[-1]) if has_more and sliced else None
+        return json_ok({
+            'list': items,
+            'has_more': has_more,
+            'next_cursor': next_cursor,
+        })
     except Exception as exc:
         logger.error(f'查询商户列表失败: {str(exc)}', exc_info=True)
         return json_err(f'查询失败: {str(exc)}', status=500)
@@ -263,101 +308,3 @@ def merchant_update_banner(request):
         logger.error(f'更新商户横幅失败: {str(exc)}', exc_info=True)
         return json_err(f'更新失败: {str(exc)}', status=400)
 
-
-@openid_required
-@require_http_methods(["POST"])
-def merchant_book(request, merchant_id):
-    """创建预约"""
-    try:
-        merchant = MerchantProfile.objects.get(merchant_id=merchant_id)
-    except MerchantProfile.DoesNotExist:
-        return json_err('商户不存在', status=404)
-
-    openid = get_openid(request)
-    try:
-        user = UserInfo.objects.get(openid=openid)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-
-    try:
-        body = json.loads(request.body.decode('utf-8'))
-    except Exception:
-        return json_err('请求体格式错误', status=400)
-
-    service_id = str(body.get('service_id', '')).strip()
-    appointment_raw = body.get('datetime')
-    if not service_id:
-        return json_err('缺少参数 service_id', status=400)
-    if not appointment_raw:
-        return json_err('缺少参数 datetime', status=400)
-
-    requested_user_id = body.get('user_id')
-    if requested_user_id and str(requested_user_id) not in (str(user.id), user.system_id):
-        return json_err('user_id 与当前用户不匹配', status=403)
-
-    appointment_time = _parse_iso_datetime(appointment_raw)
-    if not appointment_time:
-        return json_err('datetime 格式错误，需要 ISO8601 时间字符串', status=400)
-
-    remark = str(body.get('remark', '')).strip()
-
-    booking = MerchantBooking.objects.create(
-        merchant=merchant,
-        user=user,
-        service_id=service_id,
-        appointment_time=appointment_time,
-        remark=remark,
-    )
-
-    return json_ok({
-        'booking_id': booking.id,
-        'merchant_id': merchant.merchant_id,
-        'user_id': user.system_id,
-        'service_id': booking.service_id,
-        'datetime': booking.appointment_time.isoformat(),
-        'remark': booking.remark,
-        'status': booking.status,
-    }, status=201, message='预约成功')
-
-
-@openid_required
-@require_http_methods(["POST"])
-def merchant_favorite(request, merchant_id):
-    """收藏或取消收藏商户"""
-    try:
-        merchant = MerchantProfile.objects.get(merchant_id=merchant_id)
-    except MerchantProfile.DoesNotExist:
-        return json_err('商户不存在', status=404)
-
-    openid = get_openid(request)
-    try:
-        user = UserInfo.objects.get(openid=openid)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-
-    body = {}
-    if request.body:
-        try:
-            body = json.loads(request.body.decode('utf-8'))
-        except Exception:
-            return json_err('请求体格式错误', status=400)
-
-    action = str(body.get('action', 'add')).lower()
-    if action in ('remove', 'cancel', 'unfavorite'):
-        deleted, _ = MerchantFavorite.objects.filter(merchant=merchant, user=user).delete()
-        return json_ok({
-            'merchant_id': merchant.merchant_id,
-            'user_id': user.system_id,
-            'favorited': False,
-            'removed': deleted > 0,
-        }, message='已取消收藏')
-
-    favorite, created = MerchantFavorite.objects.get_or_create(merchant=merchant, user=user)
-    return json_ok({
-        'merchant_id': merchant.merchant_id,
-        'user_id': user.system_id,
-        'favorited': True,
-        'favorite_id': favorite.id,
-        'created': created,
-        'created_at': favorite.created_at.isoformat(),
-    }, message='收藏成功')

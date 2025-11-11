@@ -9,8 +9,6 @@ from wxcloudrun.views.miniapp import (
     merchants_list,
     merchant_detail,
     merchant_update_banner,
-    merchant_book,
-    merchant_favorite,
     properties_list,
     owners_by_property,
     threshold_query,
