@@ -13,6 +13,9 @@ from wxcloudrun.views.miniapp import (
     owners_by_property,
     threshold_query,
     points_change,
+    contract_image,
+    contract_signature_status,
+    contract_signature_update,
 )
 
 # 管理员视图
@@ -35,5 +38,7 @@ from wxcloudrun.views.admin import (
     admin_application_reject,
     admin_statistics_overview,
     admin_statistics_by_time,
+    admin_contract_image,
+    admin_contract_signature,
 )
 
