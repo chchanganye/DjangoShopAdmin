@@ -16,23 +16,59 @@ logger = logging.getLogger('log')
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_applications_list(request, admin):
-    """获取所有身份申请记录（支持按状态筛选）"""
-    status_filter = request.GET.get('status')  # PENDING/APPROVED/REJECTED
-    
-    qs = IdentityApplication.objects.select_related('user').all().order_by('-created_at')
-    
+    status_filter = request.GET.get('status')
+    from datetime import datetime
+    from django.db.models import Q
+    from django.utils.dateparse import parse_datetime
+    limit_param = request.GET.get('limit')
+    page_size = 20
+    if limit_param:
+        try:
+            page_size = int(limit_param)
+        except (TypeError, ValueError):
+            return json_err('limit 必须为数字', status=400)
+    if page_size < 1:
+        page_size = 1
+    if page_size > 100:
+        page_size = 100
+    cursor_param = (request.GET.get('cursor') or '').strip()
+    cursor_filter = None
+    if cursor_param:
+        parts = cursor_param.split('#', 1)
+        if len(parts) == 2:
+            ts_str, pk_str = parts
+            dt = parse_datetime(ts_str)
+            if not dt:
+                try:
+                    dt = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    dt = None
+            try:
+                pk_val = int(pk_str)
+            except (TypeError, ValueError):
+                pk_val = None
+            if dt and pk_val is not None:
+                cursor_filter = (dt, pk_val)
+        if not cursor_filter:
+            return json_err('cursor 无效', status=400)
+    qs = IdentityApplication.objects.select_related('user').all().order_by('-created_at', '-id')
     if status_filter and status_filter in ['PENDING', 'APPROVED', 'REJECTED']:
         qs = qs.filter(status=status_filter)
-    
+    if cursor_filter:
+        cursor_dt, cursor_pk = cursor_filter
+        qs = qs.filter(Q(created_at__lt=cursor_dt) | Q(created_at=cursor_dt, id__lt=cursor_pk))
+    apps = list(qs[: page_size + 1])
+    has_more = len(apps) > page_size
+    sliced = apps[:page_size]
     items = []
-    for app in qs:
+    for app in sliced:
         items.append({
             'id': app.id,
             'openid': app.user.openid,
             'system_id': app.user.system_id,
             'requested_identity': app.requested_identity,
             'status': app.status,
-            'owner_property_id': app.owner_property_id,  # 申请时填写的物业ID（商户申请时必填）
+            'owner_property_id': app.owner_property_id,
             'merchant_name': app.merchant_name,
             'merchant_description': app.merchant_description,
             'merchant_address': app.merchant_address,
@@ -44,8 +80,8 @@ def admin_applications_list(request, admin):
             'reject_reason': app.reject_reason,
             'created_at': app.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    
-    return json_ok({'total': len(items), 'list': items})
+    next_cursor = f"{sliced[-1].created_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
+    return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
 
 
 @admin_token_required

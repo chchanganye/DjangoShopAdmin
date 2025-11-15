@@ -53,20 +53,56 @@ def admin_share_setting(request, admin):
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_points_records(request, admin):
-    """查询积分变更记录（按 openid）"""
     openid = request.GET.get('openid')
-    
     if not openid:
         return json_err('缺少参数 openid', status=400)
-    
     try:
         user = UserInfo.objects.get(openid=openid)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
-    
-    qs = PointsRecord.objects.filter(user=user).order_by('-created_at')
+    from datetime import datetime
+    from django.db.models import Q
+    from django.utils.dateparse import parse_datetime
+    limit_param = request.GET.get('limit')
+    page_size = 20
+    if limit_param:
+        try:
+            page_size = int(limit_param)
+        except (TypeError, ValueError):
+            return json_err('limit 必须为数字', status=400)
+    if page_size < 1:
+        page_size = 1
+    if page_size > 100:
+        page_size = 100
+    cursor_param = (request.GET.get('cursor') or '').strip()
+    cursor_filter = None
+    if cursor_param:
+        parts = cursor_param.split('#', 1)
+        if len(parts) == 2:
+            ts_str, pk_str = parts
+            dt = parse_datetime(ts_str)
+            if not dt:
+                try:
+                    dt = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    dt = None
+            try:
+                pk_val = int(pk_str)
+            except (TypeError, ValueError):
+                pk_val = None
+            if dt and pk_val is not None:
+                cursor_filter = (dt, pk_val)
+        if not cursor_filter:
+            return json_err('cursor 无效', status=400)
+    qs = PointsRecord.objects.filter(user=user).order_by('-created_at', '-id')
+    if cursor_filter:
+        cursor_dt, cursor_pk = cursor_filter
+        qs = qs.filter(Q(created_at__lt=cursor_dt) | Q(created_at=cursor_dt, id__lt=cursor_pk))
+    records = list(qs[: page_size + 1])
+    has_more = len(records) > page_size
+    sliced = records[:page_size]
     items = []
-    for record in qs:
+    for record in sliced:
         items.append({
             'id': record.id,
             'openid': user.openid,
@@ -74,6 +110,6 @@ def admin_points_records(request, admin):
             'change': record.change,
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    
-    return json_ok({'total': len(items), 'list': items})
+    next_cursor = f"{sliced[-1].created_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
+    return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
 

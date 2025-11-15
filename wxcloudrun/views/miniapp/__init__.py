@@ -13,6 +13,8 @@ from wxcloudrun.views.miniapp.merchant import (
 )
 from wxcloudrun.views.miniapp.property import properties_list, owners_by_property
 from wxcloudrun.views.miniapp.points import threshold_query, points_change
+from wxcloudrun.views.miniapp.contract import contract_image
+from wxcloudrun.views.miniapp.signature import contract_signature_status, contract_signature_update
 
 __all__ = [
     'user_login',
@@ -27,4 +29,7 @@ __all__ = [
     'owners_by_property',
     'threshold_query',
     'points_change',
+    'contract_image',
+    'contract_signature_status',
+    'contract_signature_update',
 ]

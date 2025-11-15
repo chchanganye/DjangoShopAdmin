@@ -28,6 +28,9 @@ from wxcloudrun.views import (
     owners_by_property,
     threshold_query,
     points_change,
+    contract_image,
+    contract_signature_status,
+    contract_signature_update,
 )
 from wxcloudrun import views  # 管理员视图
 from django.conf.urls import url
@@ -60,6 +63,11 @@ urlpatterns = (
 
     # 积分变更
     url(r'^api/points/change/?$', points_change),
+    # 协议合同图片
+    url(r'^api/contract/image/?$', contract_image),
+    # 合同签名（状态与提交）
+    url(r'^api/contract/signature/status/?$', contract_signature_status),
+    url(r'^api/contract/signature/?$', contract_signature_update),
 
     # ========== 管理员端接口 ==========
     
@@ -100,4 +108,8 @@ urlpatterns = (
     # 管理员-统计接口
     url(r'^api/admin/statistics/overview/?$', views.admin_statistics_overview),     # GET 统计概览
     url(r'^api/admin/statistics/by-time/?$', views.admin_statistics_by_time),       # GET 按时间维度统计
+    # 管理员-协议合同图片配置
+    url(r'^api/admin/contract/image/?$', views.admin_contract_image),               # GET/PUT
+    # 管理员-查询用户合同签名
+    url(r'^api/admin/contract/signature/?$', views.admin_contract_signature),       # GET
 )

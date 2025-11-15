@@ -24,17 +24,51 @@ logger = logging.getLogger('log')
 def admin_users(request, admin):
     """用户管理 - GET列表 / POST创建"""
     if request.method == 'GET':
-        qs = UserInfo.objects.select_related('owner_property').all().order_by('id')
-        
-        # 收集所有头像文件ID
-        avatar_file_ids = [u.avatar_url for u in qs if u.avatar_url and u.avatar_url.startswith('cloud://')]
-        
-        # 批量获取临时URL
+        from datetime import datetime
+        from django.db.models import Q
+        from django.utils.dateparse import parse_datetime
+        limit_param = request.GET.get('limit')
+        page_size = 20
+        if limit_param:
+            try:
+                page_size = int(limit_param)
+            except (TypeError, ValueError):
+                return json_err('limit 必须为数字', status=400)
+        if page_size < 1:
+            page_size = 1
+        if page_size > 100:
+            page_size = 100
+        cursor_param = (request.GET.get('cursor') or '').strip()
+        cursor_filter = None
+        if cursor_param:
+            parts = cursor_param.split('#', 1)
+            if len(parts) == 2:
+                ts_str, pk_str = parts
+                dt = parse_datetime(ts_str)
+                if not dt:
+                    try:
+                        dt = datetime.fromisoformat(ts_str)
+                    except ValueError:
+                        dt = None
+                try:
+                    pk_val = int(pk_str)
+                except (TypeError, ValueError):
+                    pk_val = None
+                if dt and pk_val is not None:
+                    cursor_filter = (dt, pk_val)
+            if not cursor_filter:
+                return json_err('cursor 无效', status=400)
+        qs = UserInfo.objects.select_related('owner_property').all().order_by('-updated_at', '-id')
+        if cursor_filter:
+            cursor_dt, cursor_pk = cursor_filter
+            qs = qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
+        users = list(qs[: page_size + 1])
+        avatar_file_ids = [u.avatar_url for u in users if u.avatar_url and u.avatar_url.startswith('cloud://')]
         temp_urls = get_temp_file_urls(avatar_file_ids) if avatar_file_ids else {}
-        
+        has_more = len(users) > page_size
+        sliced = users[:page_size]
         items = []
-        for u in qs:
-            # 处理头像：返回 file_id 和对应的临时 URL
+        for u in sliced:
             avatar_data = None
             if u.avatar_url:
                 if u.avatar_url.startswith('cloud://'):
@@ -43,12 +77,10 @@ def admin_users(request, admin):
                         'url': temp_urls.get(u.avatar_url, '')
                     }
                 else:
-                    # 兼容旧数据（如果有直接URL的）
                     avatar_data = {
                         'file_id': '',
                         'url': u.avatar_url
                     }
-            
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
@@ -63,7 +95,8 @@ def admin_users(request, admin):
                 'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S') if u.created_at else None,
                 'updated_at': u.updated_at.strftime('%Y-%m-%d %H:%M:%S') if u.updated_at else None,
             })
-        return json_ok({'total': len(items), 'list': items})
+        next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
+        return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
 
     # POST 创建
     try:
@@ -202,6 +235,9 @@ def admin_users_detail(request, admin, system_id):
     except Exception:
         return json_err('请求体格式错误', status=400)
     
+    old_identity = user.identity_type
+    new_identity = None
+    
     if 'nickname' in body:
         user.nickname = body.get('nickname', '')
     if 'avatar_file_id' in body:
@@ -224,6 +260,7 @@ def admin_users_detail(request, admin, system_id):
         if identity_type not in ['OWNER', 'PROPERTY', 'MERCHANT', 'ADMIN']:
             return json_err('无效的身份类型', status=400)
         user.identity_type = identity_type
+        new_identity = identity_type
     if 'owner_property_id' in body:
         owner_property_id = body.get('owner_property_id')
         if owner_property_id:
@@ -238,7 +275,120 @@ def admin_users_detail(request, admin, system_id):
     if 'total_points' in body:
         user.total_points = int(body['total_points'])
     
+    # 处理身份变更的关联档案同步
     try:
+        if new_identity and new_identity != old_identity:
+            # 从非OWNER身份切换时，清理不适用的关联
+            if new_identity != 'OWNER':
+                user.owner_property = None
+            
+            # 删除与新身份不匹配的档案
+            if new_identity in ['OWNER', 'ADMIN']:
+                # 清理商户与物业档案
+                try:
+                    if hasattr(user, 'merchant_profile'):
+                        mp = user.merchant_profile
+                        if mp.banner_url and mp.banner_url.startswith('cloud://'):
+                            try:
+                                delete_cloud_files([mp.banner_url])
+                            except WxOpenApiError as exc:
+                                logger.warning(f"删除旧商户横幅图失败: {mp.banner_url}, error={exc}")
+                        mp.delete()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(user, 'property_profile'):
+                        pp = user.property_profile
+                        # 删除积分阈值（如有）
+                        try:
+                            if hasattr(pp, 'points_threshold'):
+                                pp.points_threshold.delete()
+                        except Exception:
+                            pass
+                        pp.delete()
+                except Exception:
+                    pass
+            elif new_identity == 'MERCHANT':
+                # 切换为商户：如无商户档案则按入参创建
+                from wxcloudrun.models import Category, MerchantProfile
+                need_create = not hasattr(user, 'merchant_profile')
+                if need_create:
+                    merchant_name = body.get('merchant_name')
+                    category_id = body.get('category_id')
+                    contact_phone = body.get('merchant_phone')
+                    address = body.get('merchant_address')
+                    banner_file_id = body.get('banner_file_id')
+                    if not merchant_name:
+                        return json_err('商户名称为必填项', status=400)
+                    if not category_id:
+                        return json_err('商户分类为必填项', status=400)
+                    if not contact_phone:
+                        return json_err('商户电话为必填项', status=400)
+                    if not address:
+                        return json_err('商户地址为必填项', status=400)
+                    if not banner_file_id:
+                        return json_err('商户横幅展示图为必填项', status=400)
+                    try:
+                        category = Category.objects.get(id=category_id)
+                    except Category.DoesNotExist:
+                        return json_err('分类不存在', status=404)
+                    MerchantProfile.objects.create(
+                        user=user,
+                        merchant_name=merchant_name,
+                        description=body.get('merchant_description', ''),
+                        address=address,
+                        contact_phone=contact_phone,
+                        banner_url=banner_file_id,
+                        category=category,
+                    )
+                # 切换为商户不需要物业档案，清理之
+                try:
+                    if hasattr(user, 'property_profile'):
+                        pp = user.property_profile
+                        try:
+                            if hasattr(pp, 'points_threshold'):
+                                pp.points_threshold.delete()
+                        except Exception:
+                            pass
+                        pp.delete()
+                except Exception:
+                    pass
+            elif new_identity == 'PROPERTY':
+                # 切换为物业：如无物业档案则按入参创建
+                from wxcloudrun.models import PropertyProfile, PointsThreshold
+                need_create = not hasattr(user, 'property_profile')
+                if need_create:
+                    property_name = body.get('property_name')
+                    community_name = body.get('community_name', '')
+                    if not property_name:
+                        return json_err('物业名称为必填项', status=400)
+                    property_profile = PropertyProfile.objects.create(
+                        user=user,
+                        property_name=property_name,
+                        community_name=community_name,
+                    )
+                    min_points = body.get('min_points')
+                    if min_points is not None:
+                        try:
+                            PointsThreshold.objects.create(
+                                property=property_profile,
+                                min_points=int(min_points)
+                            )
+                        except Exception:
+                            return json_err('min_points 必须为整数', status=400)
+                # 切换为物业不需要商户档案，清理之
+                try:
+                    if hasattr(user, 'merchant_profile'):
+                        mp = user.merchant_profile
+                        if mp.banner_url and mp.banner_url.startswith('cloud://'):
+                            try:
+                                delete_cloud_files([mp.banner_url])
+                            except WxOpenApiError as exc:
+                                logger.warning(f"删除旧商户横幅图失败: {mp.banner_url}, error={exc}")
+                        mp.delete()
+                except Exception:
+                    pass
+        
         user.save()
         
         # 获取头像临时URL

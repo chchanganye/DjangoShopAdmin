@@ -250,6 +250,27 @@ class ApiPermission(models.Model):
         return [s for s in self.allowed_identities.split(',') if s]
 
 
+# 协议合同配置（全局单条）
+class ContractSetting(models.Model):
+    contract_file_id = models.CharField('协议合同云文件ID', max_length=255, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'ContractSetting'
+        verbose_name = '协议合同配置'
+        verbose_name_plural = '协议合同配置'
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(id=1, defaults={'contract_file_id': ''})
+        return obj
+
+
 # 身份申请记录
 class IdentityApplication(models.Model):
     """用户申请变更身份的记录"""
@@ -324,3 +345,25 @@ class AccessLog(models.Model):
     
     def __str__(self):
         return f"{self.openid} - {self.access_date} ({self.access_count}次)"
+
+
+# 用户合同签名记录（按合同版本快照）
+class UserContractSignature(models.Model):
+    user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='contract_signatures')
+    contract_file_id = models.CharField('签署时的合同云文件ID', max_length=255)
+    signature_file_id = models.CharField('签名云文件ID', max_length=255, blank=True, default='')
+    signed_at = models.DateTimeField('签署时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'UserContractSignature'
+        unique_together = ('user', 'contract_file_id')
+        indexes = [
+            models.Index(fields=['user', 'contract_file_id']),
+        ]
+        verbose_name = '用户合同签名'
+        verbose_name_plural = '用户合同签名'
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
