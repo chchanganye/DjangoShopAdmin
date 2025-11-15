@@ -192,6 +192,15 @@ def admin_users(request, admin):
                     property=property_profile,
                     min_points=int(min_points)
                 )
+            user.owner_property = property_profile
+            user.save()
+        elif identity_type == 'MERCHANT':
+            if owner_property_id:
+                try:
+                    user.owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
+                    user.save()
+                except PropertyProfile.DoesNotExist:
+                    return json_err('物业不存在', status=404)
         
         return json_ok({
             'system_id': user.system_id,
@@ -278,8 +287,7 @@ def admin_users_detail(request, admin, system_id):
     # 处理身份变更的关联档案同步
     try:
         if new_identity and new_identity != old_identity:
-            # 从非OWNER身份切换时，清理不适用的关联
-            if new_identity != 'OWNER':
+            if new_identity == 'ADMIN':
                 user.owner_property = None
             
             # 删除与新身份不匹配的档案
@@ -340,6 +348,12 @@ def admin_users_detail(request, admin, system_id):
                         banner_url=banner_file_id,
                         category=category,
                     )
+                owner_property_id = body.get('owner_property_id')
+                if owner_property_id:
+                    try:
+                        user.owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
+                    except PropertyProfile.DoesNotExist:
+                        return json_err('物业不存在', status=404)
                 # 切换为商户不需要物业档案，清理之
                 try:
                     if hasattr(user, 'property_profile'):
@@ -374,6 +388,7 @@ def admin_users_detail(request, admin, system_id):
                             )
                         except Exception:
                             return json_err('min_points 必须为整数', status=400)
+                user.owner_property = user.property_profile if hasattr(user, 'property_profile') else None
                 # 切换为物业不需要商户档案，清理之
                 try:
                     if hasattr(user, 'merchant_profile'):
