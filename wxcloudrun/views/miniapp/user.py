@@ -10,7 +10,7 @@ from django.utils.dateparse import parse_datetime
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import UserInfo, PropertyProfile, IdentityApplication, AccessLog
+from wxcloudrun.models import UserInfo, PropertyProfile, IdentityApplication, AccessLog, MerchantProfile
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 from wxcloudrun.exceptions import WxOpenApiError
 
@@ -377,6 +377,19 @@ def user_profile(request):
             'community_name': property_profile.community_name,
             'min_points': min_points,  # 积分阈值
         }
+    elif user.identity_type == 'PROPERTY':
+        try:
+            property_profile = user.property_profile
+            threshold = getattr(property_profile, 'points_threshold', None)
+            min_points = threshold.min_points if threshold else 0
+            property_data = {
+                'property_id': property_profile.property_id,
+                'property_name': property_profile.property_name,
+                'community_name': property_profile.community_name,
+                'min_points': min_points,
+            }
+        except PropertyProfile.DoesNotExist:
+            pass
 
     data = {
         'system_id': user.system_id,
@@ -390,6 +403,42 @@ def user_profile(request):
         'min_points': min_points,               # 积分阈值（用户关联了物业时返回所在物业的积分阈值，否则为0）
         'property': property_data,              # 物业信息（用户关联了物业时有值，否则为null）
     }
+
+    # 商户身份返回商户档案信息
+    if user.identity_type == 'MERCHANT':
+        try:
+            merchant = user.merchant_profile
+            banner_data = None
+            if merchant.banner_url:
+                if merchant.banner_url.startswith('cloud://'):
+                    temp_urls2 = get_temp_file_urls([merchant.banner_url])
+                    banner_data = {
+                        'file_id': merchant.banner_url,
+                        'url': temp_urls2.get(merchant.banner_url, '')
+                    }
+                else:
+                    banner_data = {
+                        'file_id': merchant.banner_url,
+                        'url': merchant.banner_url
+                    }
+            data['merchant'] = {
+                'merchant_id': merchant.merchant_id,
+                'merchant_name': merchant.merchant_name,
+                'title': merchant.title,
+                'description': merchant.description,
+                'banner': banner_data,
+                'category_id': merchant.category.id if merchant.category else None,
+                'category_name': merchant.category.name if merchant.category else None,
+                'contact_phone': merchant.contact_phone,
+                'address': merchant.address,
+                'positive_rating_percent': merchant.positive_rating_percent,
+                'open_hours': merchant.open_hours,
+                'gallery': merchant.gallery or [],
+                'rating_count': merchant.rating_count,
+                'avg_score': float(merchant.avg_score) if merchant.avg_score is not None else 0,
+            }
+        except MerchantProfile.DoesNotExist:
+            data['merchant'] = None
 
     return json_ok(data)
 
