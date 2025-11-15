@@ -310,7 +310,6 @@ def admin_users_detail(request, admin, system_id):
                     pass
             elif new_identity == 'MERCHANT':
                 # 切换为商户：如无商户档案则按入参创建
-                from wxcloudrun.models import Category, MerchantProfile
                 need_create = not hasattr(user, 'merchant_profile')
                 if need_create:
                     merchant_name = body.get('merchant_name')
@@ -355,7 +354,6 @@ def admin_users_detail(request, admin, system_id):
                     pass
             elif new_identity == 'PROPERTY':
                 # 切换为物业：如无物业档案则按入参创建
-                from wxcloudrun.models import PropertyProfile, PointsThreshold
                 need_create = not hasattr(user, 'property_profile')
                 if need_create:
                     property_name = body.get('property_name')
