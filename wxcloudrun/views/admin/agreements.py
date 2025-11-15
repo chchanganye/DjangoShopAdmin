@@ -1,7 +1,10 @@
 """管理员协议合同管理视图"""
 import json
 import logging
+from datetime import datetime
 from django.views.decorators.http import require_http_methods
+from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
@@ -56,46 +59,88 @@ def admin_contract_image(request, admin):
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_contract_signature(request, admin):
-    """查询指定用户的合同签名信息（当前合同版本）"""
-    openid = request.GET.get('openid')
-    if not openid:
-        return json_err('缺少参数 openid', status=400)
-
-    try:
-        user = UserInfo.objects.get(openid=openid)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-
+    """查询所有商户/物业用户当前合同签名列表（游标分页）"""
     setting = ContractSetting.get_solo()
     current_contract_id = setting.contract_file_id or ''
+    
+    limit_param = request.GET.get('limit')
+    page_size = 20
+    if limit_param:
+        try:
+            page_size = int(limit_param)
+        except (TypeError, ValueError):
+            return json_err('limit 必须为数字', status=400)
+    if page_size < 1:
+        page_size = 1
+    if page_size > 100:
+        page_size = 100
 
-    allowed = user.identity_type in ['MERCHANT', 'PROPERTY']
-    signed = False
-    signed_at = None
-    contract_file_id_signed = None
-    signature_data = None
+    cursor_param = (request.GET.get('cursor') or '').strip()
+    cursor_filter = None
+    if cursor_param:
+        parts = cursor_param.split('#', 1)
+        if len(parts) == 2:
+            ts_str, pk_str = parts
+            dt = parse_datetime(ts_str)
+            if not dt:
+                try:
+                    dt = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    dt = None
+            try:
+                pk_val = int(pk_str)
+            except (TypeError, ValueError):
+                pk_val = None
+            if dt and pk_val is not None:
+                cursor_filter = (dt, pk_val)
+        if not cursor_filter:
+            return json_err('cursor 无效', status=400)
 
-    if allowed and current_contract_id:
-        record = UserContractSignature.objects.filter(user=user, contract_file_id=current_contract_id).first()
-        if record:
-            signed = True
-            contract_file_id_signed = record.contract_file_id
-            signed_at = record.signed_at.strftime('%Y-%m-%d %H:%M:%S') if record.signed_at else None
-            fid = record.signature_file_id or ''
-            temp_urls = get_temp_file_urls([fid]) if fid and fid.startswith('cloud://') else {}
-            signature_data = {
+    users_qs = UserInfo.objects.filter(identity_type__in=['MERCHANT', 'PROPERTY']).order_by('-updated_at', '-id')
+    if cursor_filter:
+        cursor_dt, cursor_pk = cursor_filter
+        users_qs = users_qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
+    users = list(users_qs[: page_size + 1])
+
+    signatures = []
+    signature_map = {}
+    if current_contract_id:
+        user_ids = [u.id for u in users]
+        records = UserContractSignature.objects.select_related('user').filter(contract_file_id=current_contract_id, user_id__in=user_ids)
+        signatures = list(records)
+        signature_map = {r.user_id: r for r in signatures}
+
+    # 收集所有需要生成临时URL的文件ID
+    file_ids = []
+    for r in signatures:
+        fid = r.signature_file_id or ''
+        if fid and fid.startswith('cloud://'):
+            file_ids.append(fid)
+    temp_urls = get_temp_file_urls(file_ids) if file_ids else {}
+
+    has_more = len(users) > page_size
+    sliced = users[:page_size]
+    items = []
+    for u in sliced:
+        record = signature_map.get(u.id)
+        signed = bool(record)
+        signed_at = record.signed_at.strftime('%Y-%m-%d %H:%M:%S') if record and record.signed_at else None
+        fid = record.signature_file_id if record else ''
+        sig = None
+        if fid:
+            sig = {
                 'file_id': fid,
                 'url': resolve_icon_url(fid, temp_urls),
             }
-
-    return json_ok({
-        'openid': user.openid,
-        'system_id': user.system_id,
-        'identity_type': user.identity_type,
-        'allowed': allowed,
-        'signed': signed,
-        'signature': signature_data,
-        'signed_at': signed_at,
-        'contract_file_id_signed': contract_file_id_signed,
-        'current_contract_file_id': current_contract_id,
-    })
+        items.append({
+            'openid': u.openid,
+            'system_id': u.system_id,
+            'identity_type': u.identity_type,
+            'signed': signed,
+            'signature': sig,
+            'signed_at': signed_at,
+            'contract_file_id_signed': record.contract_file_id if record else None,
+            'current_contract_file_id': current_contract_id,
+        })
+    next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
+    return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
