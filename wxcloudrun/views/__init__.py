@@ -4,6 +4,7 @@ from wxcloudrun.views.miniapp import (
     user_login,
     user_profile_handler,
     phone_number_resolve,
+    user_set_active_identity,
     identity_apply,
     properties_public_list,
     categories_list,
