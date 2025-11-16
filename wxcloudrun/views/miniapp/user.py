@@ -199,7 +199,7 @@ def user_update_profile(request):
         else:
             # 不允许传入空值来解除物业绑定
             return json_err('物业绑定后不能解除', status=400)
-    elif user.identity_type == 'PROPERTY' and not user.owner_property:
+    elif user.active_identity == 'PROPERTY' and not user.owner_property:
         # 物业身份用户如果还没有绑定物业，自动绑定自己的物业
         try:
             user_property_profile = user.property_profile
@@ -211,7 +211,6 @@ def user_update_profile(request):
     try:
         user.save()
         
-        # 处理头像：返回 file_id 和临时 URL
         avatar_data = None
         if user.avatar_url:
             if user.avatar_url.startswith('cloud://'):
@@ -221,13 +220,11 @@ def user_update_profile(request):
                     'url': temp_urls.get(user.avatar_url, '')
                 }
             else:
-                # 兼容直接URL（如微信头像）
                 avatar_data = {
                     'file_id': '',
                     'url': user.avatar_url
                 }
         
-        # 获取积分阈值和物业信息（所有身份都返回）
         min_points = 0
         property_data = None
         
@@ -235,7 +232,6 @@ def user_update_profile(request):
             property_profile = user.owner_property
             threshold = getattr(property_profile, 'points_threshold', None)
             min_points = threshold.min_points if threshold else 0
-            
             property_data = {
                 'property_id': property_profile.property_id,
                 'property_name': property_profile.property_name,
@@ -243,17 +239,17 @@ def user_update_profile(request):
                 'min_points': min_points,
             }
         
-    return json_ok({
-        'system_id': user.system_id,
-        'openid': user.openid,
-        'nickname': user.nickname,
-        'identity_type': user.active_identity,
-            'avatar': avatar_data,  # 返回 {file_id, url} 或 null
+        return json_ok({
+            'system_id': user.system_id,
+            'openid': user.openid,
+            'nickname': user.nickname,
+            'identity_type': user.active_identity,
+            'avatar': avatar_data,
             'phone_number': user.phone_number,
             'daily_points': user.daily_points,
             'total_points': user.total_points,
-            'min_points': min_points,               # 积分阈值（用户关联了物业时返回所在物业的积分阈值）
-            'property': property_data,              # 物业信息（用户关联了物业时有值）
+            'min_points': min_points,
+            'property': property_data,
         })
     except Exception as exc:
         logger.error(f'更新用户信息失败: {str(exc)}')
@@ -454,7 +450,7 @@ def user_profile(request):
     }
 
     # 商户身份返回商户档案信息
-    if user.identity_type == 'MERCHANT':
+    if user.active_identity == 'MERCHANT':
         try:
             merchant = user.merchant_profile
             banner_data = None
