@@ -79,8 +79,6 @@ def admin_properties_detail(request, admin, openid):
     """物业管理 - PUT更新 / DELETE删除（使用 openid）"""
     try:
         user = UserInfo.objects.get(openid=openid)
-        if user.active_identity != 'PROPERTY':
-            return json_err('该用户不是物业身份', status=400)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
     
