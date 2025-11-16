@@ -11,7 +11,7 @@ from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
 from wxcloudrun.models import UserInfo, PropertyProfile, IdentityApplication, AccessLog, MerchantProfile
-from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
+from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files, get_phone_number_by_code
 from wxcloudrun.exceptions import WxOpenApiError
 
 
@@ -331,6 +331,26 @@ def user_profile_handler(request):
         return user_update_profile(request)
     else:
         return json_err('不支持的请求方法', status=405)
+
+
+@openid_required
+@require_http_methods(["POST"])
+def phone_number_resolve(request):
+    openid = get_openid(request)
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    code = (body.get('code') or '').strip()
+    if not code:
+        return json_err('缺少参数 code', status=400)
+    info = get_phone_number_by_code(code)
+    return json_ok({
+        'openid': openid,
+        'phone_number': info.get('phoneNumber', ''),
+        'pure_phone_number': info.get('purePhoneNumber', ''),
+        'country_code': info.get('countryCode', ''),
+    })
 
 
 @openid_required

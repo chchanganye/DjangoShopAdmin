@@ -18,6 +18,7 @@ from wxcloudrun.views import (
     # 小程序端视图
     user_login,
     user_profile_handler,
+    phone_number_resolve,
     identity_apply,
     properties_public_list,
     categories_list,
@@ -41,6 +42,7 @@ urlpatterns = (
     # 用户登录与身份管理
     url(r'^api/user/login/?$', user_login),                          # GET 登录/获取用户信息
     url(r'^api/user/profile/?$', user_profile_handler),              # GET 获取/PUT 更新用户详细信息
+    url(r'^api/user/phone/resolve/?$', phone_number_resolve),        # POST 通过code换取手机号
     url(r'^api/user/identity/apply/?$', identity_apply),             # POST 申请商户/物业身份
     url(r'^api/properties/public/?$', properties_public_list),       # GET 获取物业列表（供业主选择）
     

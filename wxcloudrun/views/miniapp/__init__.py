@@ -2,6 +2,7 @@
 from wxcloudrun.views.miniapp.user import (
     user_login,
     user_profile_handler,
+    phone_number_resolve,
     identity_apply,
     properties_public_list,
 )
@@ -19,6 +20,7 @@ from wxcloudrun.views.miniapp.signature import contract_signature_status, contra
 __all__ = [
     'user_login',
     'user_profile_handler',
+    'phone_number_resolve',
     'identity_apply',
     'properties_public_list',
     'categories_list',

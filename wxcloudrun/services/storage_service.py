@@ -84,3 +84,10 @@ def generate_storage_path(filename: str, directory: str = 'category-icons') -> s
     unique_name = f"{uuid.uuid4().hex}.{ext}"
     return f"{directory}/{unique_name}"
 
+
+def get_phone_number_by_code(code: str):
+    data = wx_openapi_post('openapi/phonenumber/getPhoneNumber', {
+        'code': code,
+    })
+    return data.get('phone_info') or {}
+
