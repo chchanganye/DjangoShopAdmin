@@ -42,5 +42,8 @@ from wxcloudrun.views.admin import (
     admin_statistics_by_time,
     admin_contract_image,
     admin_contract_signature,
+    admin_identity_assign,
+    admin_identity_revoke,
+    admin_identity_active_set,
 )
 
