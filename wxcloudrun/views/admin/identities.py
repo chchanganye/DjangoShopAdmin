@@ -4,7 +4,7 @@ from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
-from wxcloudrun.models import UserInfo, UserAssignedIdentity
+from wxcloudrun.models import UserInfo, UserAssignedIdentity, Category, MerchantProfile, PropertyProfile, PointsThreshold
 
 
 def _conflict_exists(user: UserInfo, target: str) -> bool:
@@ -37,7 +37,120 @@ def admin_identity_assign(request, admin, system_id):
         return json_err('商户与物业身份不可同时存在，请先撤销现有身份', status=400)
 
     UserAssignedIdentity.objects.get_or_create(user=user, identity_type=identity_type)
-    return json_ok({'system_id': user.system_id, 'assigned': identity_type})
+    result = {'system_id': user.system_id, 'assigned': identity_type}
+    
+    if identity_type == 'MERCHANT':
+        need_create = not hasattr(user, 'merchant_profile')
+        merchant_name = (body.get('merchant_name') or '').strip()
+        category_id = body.get('category_id')
+        contact_phone = (body.get('merchant_phone') or '').strip()
+        address = (body.get('merchant_address') or '').strip()
+        banner_file_id = (body.get('banner_file_id') or '').strip()
+        if need_create:
+            if not merchant_name:
+                return json_err('商户名称为必填项', status=400)
+            if not category_id:
+                return json_err('商户分类为必填项', status=400)
+            if not contact_phone:
+                return json_err('商户电话为必填项', status=400)
+            if not address:
+                return json_err('商户地址为必填项', status=400)
+            if not banner_file_id:
+                return json_err('商户横幅展示图为必填项', status=400)
+            try:
+                category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return json_err('分类不存在', status=404)
+            MerchantProfile.objects.create(
+                user=user,
+                merchant_name=merchant_name,
+                description=body.get('merchant_description', ''),
+                address=address,
+                contact_phone=contact_phone,
+                banner_url=banner_file_id,
+                category=category,
+            )
+        else:
+            mp = user.merchant_profile
+            if merchant_name:
+                mp.merchant_name = merchant_name
+            if 'merchant_description' in body:
+                mp.description = body.get('merchant_description', '')
+            if address:
+                mp.address = address
+            if contact_phone:
+                mp.contact_phone = contact_phone
+            if banner_file_id:
+                mp.banner_url = banner_file_id
+            if category_id:
+                try:
+                    mp.category = Category.objects.get(id=category_id)
+                except Category.DoesNotExist:
+                    return json_err('分类不存在', status=404)
+            mp.save()
+        owner_property_id = body.get('owner_property_id')
+        if owner_property_id:
+            try:
+                user.owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
+            except PropertyProfile.DoesNotExist:
+                return json_err('物业不存在', status=404)
+        user.active_identity = 'MERCHANT'
+        user.save()
+        m = user.merchant_profile
+        result['merchant'] = {
+            'merchant_id': m.merchant_id,
+            'merchant_name': m.merchant_name,
+            'title': m.title,
+            'description': m.description,
+            'banner_file_id': m.banner_url,
+            'category_id': m.category.id if m.category else None,
+            'category_name': m.category.name if m.category else None,
+            'contact_phone': m.contact_phone,
+            'address': m.address,
+        }
+    elif identity_type == 'PROPERTY':
+        need_create = not hasattr(user, 'property_profile')
+        property_name = (body.get('property_name') or '').strip()
+        community_name = (body.get('community_name') or '').strip()
+        if need_create:
+            if not property_name:
+                return json_err('物业名称为必填项', status=400)
+            property_profile = PropertyProfile.objects.create(
+                user=user,
+                property_name=property_name,
+                community_name=community_name,
+            )
+            min_points = body.get('min_points')
+            if min_points is not None:
+                try:
+                    PointsThreshold.objects.create(property=property_profile, min_points=int(min_points))
+                except Exception:
+                    return json_err('min_points 必须为整数', status=400)
+        else:
+            pp = user.property_profile
+            if property_name:
+                pp.property_name = property_name
+            if 'community_name' in body:
+                pp.community_name = community_name
+            pp.save()
+            if 'min_points' in body:
+                min_points = body.get('min_points')
+                if min_points is None:
+                    if hasattr(pp, 'points_threshold'):
+                        pp.points_threshold.delete()
+                else:
+                    PointsThreshold.objects.update_or_create(property=pp, defaults={'min_points': int(min_points)})
+        user.owner_property = user.property_profile
+        user.active_identity = 'PROPERTY'
+        user.save()
+        p = user.property_profile
+        result['property'] = {
+            'property_id': p.property_id,
+            'property_name': p.property_name,
+            'community_name': p.community_name,
+            'min_points': p.points_threshold.min_points if hasattr(p, 'points_threshold') else 0,
+        }
+    return json_ok(result)
 
 
 @admin_token_required
