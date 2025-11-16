@@ -13,7 +13,7 @@ def forwards_fill_active_identity(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('wxcloudrun', '0011_auto_20251115_2122'),
+        ('wxcloudrun', '0010_contracts_and_signatures'),
     ]
 
     operations = [
