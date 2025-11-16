@@ -97,7 +97,7 @@ def admin_merchants_detail(request, admin, openid):
     """商户管理 - PUT更新 / DELETE删除（使用 openid）"""
     try:
         user = UserInfo.objects.get(openid=openid)
-        if user.identity_type != 'MERCHANT':
+        if user.active_identity != 'MERCHANT':
             return json_err('该用户不是商户身份', status=400)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)

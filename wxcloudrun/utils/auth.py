@@ -1,7 +1,7 @@
 """认证工具函数"""
 import logging
 from rest_framework.authtoken.models import Token
-from wxcloudrun.models import UserInfo
+from wxcloudrun.models import UserInfo, UserAssignedIdentity
 
 
 logger = logging.getLogger('log')
@@ -13,11 +13,14 @@ def get_openid(request):
 
 
 def ensure_userinfo_exists(openid: str) -> UserInfo:
-    """若用户不存在则自动创建一条默认档案，确保前端接口可用。"""
     user, created = UserInfo.objects.get_or_create(
         openid=openid,
-        defaults={'identity_type': 'OWNER'},
+        defaults={'identity_type': 'OWNER', 'active_identity': 'OWNER'},
     )
+    try:
+        UserAssignedIdentity.objects.get_or_create(user=user, identity_type='OWNER')
+    except Exception:
+        pass
     if created:
         logger.info(f'自动创建小程序用户: openid={openid}')
     return user

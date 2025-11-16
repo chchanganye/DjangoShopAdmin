@@ -65,7 +65,8 @@ class UserInfo(models.Model):
     nickname = models.CharField('用户昵称', max_length=100, blank=True, default='')
     avatar_url = models.CharField('头像云文件ID', max_length=512, blank=True, default='')  # 存储云文件ID，如：cloud://xxx.jpg
     phone_number = models.CharField('手机号', max_length=32, blank=True, default='')
-    identity_type = models.CharField('身份类型', max_length=20, choices=IDENTITY_CHOICES)
+    identity_type = models.CharField('身份类型(兼容字段)', max_length=20, choices=IDENTITY_CHOICES)
+    active_identity = models.CharField('活跃身份', max_length=20, choices=IDENTITY_CHOICES, default='OWNER')
 
     daily_points = models.IntegerField('当日积分', default=0)
     total_points = models.IntegerField('累计积分', default=0)
@@ -94,7 +95,7 @@ class UserInfo(models.Model):
     def save(self, *args, **kwargs):
         # 自动生成 system_id
         if not self.system_id:
-            prefix = self.identity_type or 'USER'
+            prefix = self.active_identity or self.identity_type or 'USER'
             self.system_id = _generate_seq(prefix, UserInfo, 'system_id')
         # 按需设置每日积分日期
         if self.daily_points_date is None:
@@ -248,6 +249,22 @@ class ApiPermission(models.Model):
 
     def allowed_list(self):
         return [s for s in self.allowed_identities.split(',') if s]
+
+
+class UserAssignedIdentity(models.Model):
+    user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='assigned_identities')
+    identity_type = models.CharField('身份类型', max_length=20, choices=IDENTITY_CHOICES)
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'UserAssignedIdentity'
+        unique_together = ('user', 'identity_type')
+        indexes = [
+            models.Index(fields=['user', 'identity_type']),
+        ]
+        verbose_name = '用户赋予身份'
+        verbose_name_plural = '用户赋予身份'
+
 
 
 # 协议合同配置（全局单条）

@@ -19,6 +19,7 @@ from wxcloudrun.views import (
     user_login,
     user_profile_handler,
     phone_number_resolve,
+    user_set_active_identity,
     identity_apply,
     properties_public_list,
     categories_list,
@@ -43,6 +44,7 @@ urlpatterns = (
     url(r'^api/user/login/?$', user_login),                          # GET 登录/获取用户信息
     url(r'^api/user/profile/?$', user_profile_handler),              # GET 获取/PUT 更新用户详细信息
     url(r'^api/user/phone/resolve/?$', phone_number_resolve),        # POST 通过code换取手机号
+    url(r'^api/user/identity/active/?$', user_set_active_identity),  # PUT 切换活跃身份
     url(r'^api/user/identity/apply/?$', identity_apply),             # POST 申请商户/物业身份
     url(r'^api/properties/public/?$', properties_public_list),       # GET 获取物业列表（供业主选择）
     
@@ -91,6 +93,10 @@ urlpatterns = (
     # 管理员-用户管理 CRUD
     url(r'^api/admin/users/?$', views.admin_users),                            # GET/POST
     url(r'^api/admin/users/(?P<system_id>[^/]+)/?$', views.admin_users_detail),  # PUT/DELETE
+    # 管理员-身份管理
+    url(r'^api/admin/users/(?P<system_id>[^/]+)/identities/assign/?$', views.admin_identity_assign),   # POST
+    url(r'^api/admin/users/(?P<system_id>[^/]+)/identities/revoke/?$', views.admin_identity_revoke),   # POST
+    url(r'^api/admin/users/(?P<system_id>[^/]+)/identity/active/?$', views.admin_identity_active_set), # PUT
 
     # 管理员-对象存储辅助接口
     url(r'^api/admin/storage/upload-credential/?$', views.admin_storage_upload_credential),  # POST

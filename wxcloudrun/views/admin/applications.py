@@ -110,8 +110,16 @@ def admin_application_approve(request, admin):
     
     try:
         with transaction.atomic():
-            # 更新用户身份
-            user.identity_type = requested_identity
+            # 赋予身份（不允许同时拥有商户与物业）
+            from wxcloudrun.models import UserAssignedIdentity
+            if requested_identity in ['MERCHANT', 'PROPERTY']:
+                conflict = (requested_identity == 'MERCHANT' and user.assigned_identities.filter(identity_type='PROPERTY').exists()) or \
+                           (requested_identity == 'PROPERTY' and user.assigned_identities.filter(identity_type='MERCHANT').exists())
+                if conflict:
+                    return json_err('商户与物业身份不可同时存在，请先撤销现有身份', status=400)
+            UserAssignedIdentity.objects.get_or_create(user=user, identity_type=requested_identity)
+            UserAssignedIdentity.objects.get_or_create(user=user, identity_type='OWNER')
+            user.active_identity = requested_identity
             user.save()
             
             # 根据申请类型创建对应档案

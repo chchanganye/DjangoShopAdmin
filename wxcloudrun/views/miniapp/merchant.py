@@ -230,7 +230,7 @@ def merchant_update_banner(request):
         return json_err('用户不存在', status=404)
     
     # 验证用户身份
-    if user.identity_type != 'MERCHANT':
+    if user.active_identity != 'MERCHANT':
         return json_err('只有商户用户可以上传横幅', status=403)
     
     # 获取商户档案

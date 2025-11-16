@@ -73,6 +73,11 @@ def user_login(request):
         'phone_number': user.phone_number,
         'is_first_login': is_first_login,
     }
+    try:
+        identities = [ai.identity_type for ai in user.assigned_identities.all()]
+    except Exception:
+        identities = [user.active_identity]
+    data['available_identities'] = identities
     
     if user.owner_property:
         data['property'] = {
@@ -160,9 +165,9 @@ def user_update_profile(request):
         if requested_identity in ['MERCHANT', 'PROPERTY']:
             return json_err('商户和物业身份需要通过申请流程获得，不能直接设置', status=400)
         
-        # 允许切换成业主身份
+        # 允许切换成业主身份（活跃身份）
         if requested_identity == 'OWNER':
-            user.identity_type = 'OWNER'
+            user.active_identity = 'OWNER'
     
     # 物业绑定处理：所有身份只能在第一次绑定物业，之后不能修改
     if 'owner_property_id' in body:
@@ -238,11 +243,11 @@ def user_update_profile(request):
                 'min_points': min_points,
             }
         
-        return json_ok({
-            'system_id': user.system_id,
-            'openid': user.openid,
-            'nickname': user.nickname,
-            'identity_type': user.identity_type,
+    return json_ok({
+        'system_id': user.system_id,
+        'openid': user.openid,
+        'nickname': user.nickname,
+        'identity_type': user.active_identity,
             'avatar': avatar_data,  # 返回 {file_id, url} 或 null
             'phone_number': user.phone_number,
             'daily_points': user.daily_points,
@@ -354,6 +359,30 @@ def phone_number_resolve(request):
 
 
 @openid_required
+@require_http_methods(["PUT"])
+def user_set_active_identity(request):
+    openid = get_openid(request)
+    try:
+        user = UserInfo.objects.get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+    identity_type = (body.get('identity_type') or '').strip()
+    if identity_type not in ['OWNER', 'MERCHANT', 'PROPERTY']:
+        return json_err('无效的身份类型', status=400)
+    # 必须是已赋予身份
+    if not user.assigned_identities.filter(identity_type=identity_type).exists():
+        return json_err('该身份未赋予，无法切换', status=400)
+    # 不允许同时拥有 MERCHANT 与 PROPERTY（assign 已防止，这里仅切换）
+    user.active_identity = identity_type
+    user.save()
+    return json_ok({'active_identity': user.active_identity, 'available_identities': [ai.identity_type for ai in user.assigned_identities.all()]})
+
+
+@openid_required
 @require_http_methods(["GET"])
 def user_profile(request):
     """获取用户详细信息（包含积分信息）
@@ -415,7 +444,7 @@ def user_profile(request):
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
-        'identity_type': user.identity_type,
+        'identity_type': user.active_identity,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null
         'phone_number': user.phone_number,
         'daily_points': user.daily_points,      # 当日积分

@@ -85,7 +85,7 @@ def admin_users(request, admin):
                 'system_id': u.system_id,
                 'openid': u.openid,
                 'nickname': u.nickname,
-                'identity_type': u.identity_type,
+                'identity_type': u.active_identity,
                 'avatar': avatar_data,
                 'phone_number': u.phone_number,
                 'daily_points': u.daily_points,
@@ -138,6 +138,17 @@ def admin_users(request, admin):
             daily_points=body.get('daily_points', 0),
             total_points=body.get('total_points', 0),
         )
+        from wxcloudrun.models import UserAssignedIdentity
+        try:
+            UserAssignedIdentity.objects.get_or_create(user=user, identity_type='OWNER')
+            UserAssignedIdentity.objects.get_or_create(user=user, identity_type=identity_type)
+        except Exception:
+            pass
+        try:
+            user.active_identity = identity_type
+            user.save()
+        except Exception:
+            pass
         
         # 根据身份类型自动创建对应的档案
         if identity_type == 'MERCHANT':
@@ -208,7 +219,7 @@ def admin_users(request, admin):
             'nickname': user.nickname,
             'avatar_url': user.avatar_url,
             'phone_number': user.phone_number,
-            'identity_type': user.identity_type,
+            'identity_type': user.active_identity,
             'daily_points': user.daily_points,
             'total_points': user.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
@@ -268,7 +279,7 @@ def admin_users_detail(request, admin, system_id):
         identity_type = body['identity_type']
         if identity_type not in ['OWNER', 'PROPERTY', 'MERCHANT', 'ADMIN']:
             return json_err('无效的身份类型', status=400)
-        user.identity_type = identity_type
+        user.active_identity = identity_type
         new_identity = identity_type
     if 'owner_property_id' in body:
         owner_property_id = body.get('owner_property_id')
@@ -290,32 +301,9 @@ def admin_users_detail(request, admin, system_id):
             if new_identity == 'ADMIN':
                 user.owner_property = None
             
-            # 删除与新身份不匹配的档案
+            # OWNER/ADMIN：不删除商户与物业档案，仅切换活跃身份
             if new_identity in ['OWNER', 'ADMIN']:
-                # 清理商户与物业档案
-                try:
-                    if hasattr(user, 'merchant_profile'):
-                        mp = user.merchant_profile
-                        if mp.banner_url and mp.banner_url.startswith('cloud://'):
-                            try:
-                                delete_cloud_files([mp.banner_url])
-                            except WxOpenApiError as exc:
-                                logger.warning(f"删除旧商户横幅图失败: {mp.banner_url}, error={exc}")
-                        mp.delete()
-                except Exception:
-                    pass
-                try:
-                    if hasattr(user, 'property_profile'):
-                        pp = user.property_profile
-                        # 删除积分阈值（如有）
-                        try:
-                            if hasattr(pp, 'points_threshold'):
-                                pp.points_threshold.delete()
-                        except Exception:
-                            pass
-                        pp.delete()
-                except Exception:
-                    pass
+                pass
             elif new_identity == 'MERCHANT':
                 # 切换为商户：如无商户档案则按入参创建
                 need_create = not hasattr(user, 'merchant_profile')
@@ -354,18 +342,8 @@ def admin_users_detail(request, admin, system_id):
                         user.owner_property = PropertyProfile.objects.get(property_id=owner_property_id)
                     except PropertyProfile.DoesNotExist:
                         return json_err('物业不存在', status=404)
-                # 切换为商户不需要物业档案，清理之
-                try:
-                    if hasattr(user, 'property_profile'):
-                        pp = user.property_profile
-                        try:
-                            if hasattr(pp, 'points_threshold'):
-                                pp.points_threshold.delete()
-                        except Exception:
-                            pass
-                        pp.delete()
-                except Exception:
-                    pass
+                # 保留可能存在的物业档案
+                pass
             elif new_identity == 'PROPERTY':
                 # 切换为物业：如无物业档案则按入参创建
                 need_create = not hasattr(user, 'property_profile')
@@ -389,18 +367,8 @@ def admin_users_detail(request, admin, system_id):
                         except Exception:
                             return json_err('min_points 必须为整数', status=400)
                 user.owner_property = user.property_profile if hasattr(user, 'property_profile') else None
-                # 切换为物业不需要商户档案，清理之
-                try:
-                    if hasattr(user, 'merchant_profile'):
-                        mp = user.merchant_profile
-                        if mp.banner_url and mp.banner_url.startswith('cloud://'):
-                            try:
-                                delete_cloud_files([mp.banner_url])
-                            except WxOpenApiError as exc:
-                                logger.warning(f"删除旧商户横幅图失败: {mp.banner_url}, error={exc}")
-                        mp.delete()
-                except Exception:
-                    pass
+                # 保留可能存在的商户档案
+                pass
         
         user.save()
         
@@ -425,7 +393,7 @@ def admin_users_detail(request, admin, system_id):
             'nickname': user.nickname,
             'avatar': avatar_data,
             'phone_number': user.phone_number,
-            'identity_type': user.identity_type,
+            'identity_type': user.active_identity,
             'daily_points': user.daily_points,
             'total_points': user.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
