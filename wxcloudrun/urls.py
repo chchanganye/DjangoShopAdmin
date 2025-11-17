@@ -116,6 +116,7 @@ urlpatterns = (
     # 管理员-统计接口
     url(r'^api/admin/statistics/overview/?$', views.admin_statistics_overview),     # GET 统计概览
     url(r'^api/admin/statistics/by-time/?$', views.admin_statistics_by_time),       # GET 按时间维度统计
+    url(r'^api/admin/statistics/by-range/?$', views.admin_statistics_by_range),     # GET 按日期范围统计
     # 管理员-协议合同图片配置
     url(r'^api/admin/contract/image/?$', views.admin_contract_image),               # GET/PUT
     # 管理员-查询用户合同签名

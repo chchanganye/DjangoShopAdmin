@@ -11,7 +11,7 @@ from wxcloudrun.views.admin.applications import (
     admin_application_approve,
     admin_application_reject,
 )
-from wxcloudrun.views.admin.statistics import admin_statistics_overview, admin_statistics_by_time
+from wxcloudrun.views.admin.statistics import admin_statistics_overview, admin_statistics_by_time, admin_statistics_by_range
 from wxcloudrun.views.admin.agreements import admin_contract_image, admin_contract_signature
 from wxcloudrun.views.admin.identities import admin_identity_assign, admin_identity_revoke, admin_identity_active_set
 
@@ -34,6 +34,7 @@ __all__ = [
     'admin_application_reject',
     'admin_statistics_overview',
     'admin_statistics_by_time',
+    'admin_statistics_by_range',
     'admin_contract_image',
     'admin_contract_signature',
     'admin_identity_assign',
