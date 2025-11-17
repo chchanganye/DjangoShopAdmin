@@ -140,34 +140,6 @@ def admin_statistics_by_time(request, admin):
         return json_ok(data)
 
 
-@admin_token_required
-@require_http_methods(["GET"])
-def admin_statistics_by_range(request, admin):
-    start = request.GET.get('start_date')
-    end = request.GET.get('end_date')
-    if not start or not end:
-        return json_err('缺少参数 start_date 或 end_date', status=400)
-    try:
-        from datetime import datetime
-        sd = datetime.fromisoformat(start).date()
-        ed = datetime.fromisoformat(end).date()
-    except Exception:
-        return json_err('日期格式错误，使用 YYYY-MM-DD', status=400)
-    if sd > ed:
-        return json_err('start_date 不能大于 end_date', status=400)
-    users_count = UserInfo.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).count()
-    transaction_sum = PointsRecord.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).aggregate(total=Sum('change'))['total'] or 0
-    transaction_amount = abs(transaction_sum)
-    visits_count = AccessLog.objects.filter(access_date__gte=sd, access_date__lte=ed).aggregate(total=Sum('access_count'))['total'] or 0
-    data = {
-        'type': 'range',
-        'start_date': str(sd),
-        'end_date': str(ed),
-        'users_count': users_count,
-        'transaction_amount': transaction_amount,
-        'visits_count': visits_count,
-    }
-    return json_ok(data)
     elif stat_type == 'week':
         # 按周统计（某月的第几周）
         if not month:
@@ -239,4 +211,34 @@ def admin_statistics_by_range(request, admin):
         }
         
         return json_ok(data)
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_statistics_by_range(request, admin):
+    start = request.GET.get('start_date')
+    end = request.GET.get('end_date')
+    if not start or not end:
+        return json_err('缺少参数 start_date 或 end_date', status=400)
+    try:
+        from datetime import datetime
+        sd = datetime.fromisoformat(start).date()
+        ed = datetime.fromisoformat(end).date()
+    except Exception:
+        return json_err('日期格式错误，使用 YYYY-MM-DD', status=400)
+    if sd > ed:
+        return json_err('start_date 不能大于 end_date', status=400)
+    users_count = UserInfo.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).count()
+    transaction_sum = PointsRecord.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).aggregate(total=Sum('change'))['total'] or 0
+    transaction_amount = abs(transaction_sum)
+    visits_count = AccessLog.objects.filter(access_date__gte=sd, access_date__lte=ed).aggregate(total=Sum('access_count'))['total'] or 0
+    data = {
+        'type': 'range',
+        'start_date': str(sd),
+        'end_date': str(ed),
+        'users_count': users_count,
+        'transaction_amount': transaction_amount,
+        'visits_count': visits_count,
+    }
+    return json_ok(data)
 
