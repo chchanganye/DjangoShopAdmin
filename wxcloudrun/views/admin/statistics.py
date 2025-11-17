@@ -2,6 +2,7 @@
 import logging
 import calendar
 from datetime import date
+from datetime import timedelta
 from django.views.decorators.http import require_http_methods
 from django.db.models import Sum
 
@@ -236,6 +237,28 @@ def admin_statistics_by_range(request, admin):
         'type': 'range',
         'start_date': str(sd),
         'end_date': str(ed),
+        'users_count': users_count,
+        'transaction_amount': transaction_amount,
+        'visits_count': visits_count,
+    }
+    return json_ok(data)
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_statistics_last_week(request, admin):
+    today = date.today()
+    # ISO: Monday=0. Last week Monday = today - (weekday+7) days
+    last_monday = today - timedelta(days=today.weekday() + 7)
+    last_sunday = last_monday + timedelta(days=6)
+    users_count = UserInfo.objects.filter(created_at__date__gte=last_monday, created_at__date__lte=last_sunday).count()
+    transaction_sum = PointsRecord.objects.filter(created_at__date__gte=last_monday, created_at__date__lte=last_sunday).aggregate(total=Sum('change'))['total'] or 0
+    transaction_amount = abs(transaction_sum)
+    visits_count = AccessLog.objects.filter(access_date__gte=last_monday, access_date__lte=last_sunday).aggregate(total=Sum('access_count'))['total'] or 0
+    data = {
+        'type': 'last_week',
+        'start_date': str(last_monday),
+        'end_date': str(last_sunday),
         'users_count': users_count,
         'transaction_amount': transaction_amount,
         'visits_count': visits_count,
