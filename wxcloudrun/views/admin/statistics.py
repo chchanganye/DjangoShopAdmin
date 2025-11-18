@@ -14,6 +14,22 @@ from wxcloudrun.models import UserInfo, PointsRecord, AccessLog
 logger = logging.getLogger('log')
 
 
+def _stats_between(sd, ed):
+    users_count = UserInfo.objects.filter(
+        created_at__date__gte=sd,
+        created_at__date__lte=ed
+    ).count()
+    transaction_sum = PointsRecord.objects.filter(
+        created_at__date__gte=sd,
+        created_at__date__lte=ed
+    ).aggregate(total=Sum('change'))['total'] or 0
+    transaction_amount = abs(transaction_sum)
+    visits_count = AccessLog.objects.filter(
+        access_date__gte=sd,
+        access_date__lte=ed
+    ).aggregate(total=Sum('access_count'))['total'] or 0
+    return users_count, transaction_amount, visits_count
+
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_statistics_overview(request, admin):
@@ -217,24 +233,52 @@ def admin_statistics_by_time(request, admin):
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_statistics_by_range(request, admin):
+    from datetime import datetime
+    today = date.today()
+    period = request.GET.get('period')
+
     start = request.GET.get('start_date')
     end = request.GET.get('end_date')
-    if not start or not end:
-        return json_err('缺少参数 start_date 或 end_date', status=400)
-    try:
-        from datetime import datetime
-        sd = datetime.fromisoformat(start).date()
-        ed = datetime.fromisoformat(end).date()
-    except Exception:
-        return json_err('日期格式错误，使用 YYYY-MM-DD', status=400)
+
+    sd = None
+    ed = None
+
+    if start and end:
+        try:
+            sd = datetime.fromisoformat(start).date()
+            ed = datetime.fromisoformat(end).date()
+        except Exception:
+            return json_err('日期格式错误，使用 YYYY-MM-DD', status=400)
+    else:
+        if period == 'this_month':
+            sd = date(today.year, today.month, 1)
+            ed = today
+        elif period == 'last_month':
+            prev_year = today.year if today.month > 1 else today.year - 1
+            prev_month = today.month - 1 if today.month > 1 else 12
+            first_day_prev = date(prev_year, prev_month, 1)
+            last_day_prev_num = calendar.monthrange(prev_year, prev_month)[1]
+            sd = first_day_prev
+            ed = date(prev_year, prev_month, last_day_prev_num)
+        elif period == 'this_year':
+            sd = date(today.year, 1, 1)
+            ed = today
+        elif period == 'last_week':
+            last_monday = today - timedelta(days=today.weekday() + 7)
+            sd = last_monday
+            ed = last_monday + timedelta(days=6)
+        else:
+            sd = today - timedelta(days=6)
+            ed = today
+
     if sd > ed:
         return json_err('start_date 不能大于 end_date', status=400)
-    users_count = UserInfo.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).count()
-    transaction_sum = PointsRecord.objects.filter(created_at__date__gte=sd, created_at__date__lte=ed).aggregate(total=Sum('change'))['total'] or 0
-    transaction_amount = abs(transaction_sum)
-    visits_count = AccessLog.objects.filter(access_date__gte=sd, access_date__lte=ed).aggregate(total=Sum('access_count'))['total'] or 0
+
+    users_count, transaction_amount, visits_count = _stats_between(sd, ed)
+
     data = {
         'type': 'range',
+        'period': period or 'last_7_days',
         'start_date': str(sd),
         'end_date': str(ed),
         'users_count': users_count,
@@ -251,10 +295,7 @@ def admin_statistics_last_week(request, admin):
     # ISO: Monday=0. Last week Monday = today - (weekday+7) days
     last_monday = today - timedelta(days=today.weekday() + 7)
     last_sunday = last_monday + timedelta(days=6)
-    users_count = UserInfo.objects.filter(created_at__date__gte=last_monday, created_at__date__lte=last_sunday).count()
-    transaction_sum = PointsRecord.objects.filter(created_at__date__gte=last_monday, created_at__date__lte=last_sunday).aggregate(total=Sum('change'))['total'] or 0
-    transaction_amount = abs(transaction_sum)
-    visits_count = AccessLog.objects.filter(access_date__gte=last_monday, access_date__lte=last_sunday).aggregate(total=Sum('access_count'))['total'] or 0
+    users_count, transaction_amount, visits_count = _stats_between(last_monday, last_sunday)
     data = {
         'type': 'last_week',
         'start_date': str(last_monday),
