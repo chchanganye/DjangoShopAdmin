@@ -64,20 +64,20 @@ def user_login(request):
                 'url': user.avatar_url
             }
     
+    is_merchant = user.assigned_identities.filter(identity_type='MERCHANT').exists()
+    is_property = user.assigned_identities.filter(identity_type='PROPERTY').exists()
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
         'identity_type': user.identity_type,
+        'active_identity': user.active_identity,
+        'is_merchant': is_merchant,
+        'is_property': is_property,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null
         'phone_number': user.phone_number,
         'is_first_login': is_first_login,
     }
-    try:
-        identities = [ai.identity_type for ai in user.assigned_identities.all()]
-    except Exception:
-        identities = [user.active_identity]
-    data['available_identities'] = identities
     
     if user.owner_property:
         data['property'] = {
@@ -541,4 +541,3 @@ def properties_public_list(request):
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
-
