@@ -77,6 +77,7 @@ def admin_statistics_overview(request, admin):
         'total_transaction_amount': total_transaction_amount,
         'total_visits': total_visits,
         'today_visits': today_visits,
+        'today_visits_until_now': today_visits,
     }
     
     return json_ok(data)
