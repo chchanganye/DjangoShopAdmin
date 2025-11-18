@@ -64,16 +64,8 @@ def user_login(request):
                 'url': user.avatar_url
             }
     
-    is_merchant = (
-        user.assigned_identities.filter(identity_type='MERCHANT').exists()
-        or user.active_identity == 'MERCHANT'
-        or hasattr(user, 'merchant_profile')
-    )
-    is_property = (
-        user.assigned_identities.filter(identity_type='PROPERTY').exists()
-        or user.active_identity == 'PROPERTY'
-        or hasattr(user, 'property_profile')
-    )
+    is_merchant = MerchantProfile.objects.filter(user=user).exists()
+    is_property = PropertyProfile.objects.filter(user=user).exists()
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
@@ -383,16 +375,8 @@ def user_set_active_identity(request):
     # 不允许同时拥有 MERCHANT 与 PROPERTY（assign 已防止，这里仅切换）
     user.active_identity = identity_type
     user.save()
-    is_merchant = (
-        user.assigned_identities.filter(identity_type='MERCHANT').exists()
-        or user.active_identity == 'MERCHANT'
-        or hasattr(user, 'merchant_profile')
-    )
-    is_property = (
-        user.assigned_identities.filter(identity_type='PROPERTY').exists()
-        or user.active_identity == 'PROPERTY'
-        or hasattr(user, 'property_profile')
-    )
+    is_merchant = MerchantProfile.objects.filter(user=user).exists()
+    is_property = PropertyProfile.objects.filter(user=user).exists()
     return json_ok({'active_identity': user.active_identity, 'is_merchant': is_merchant, 'is_property': is_property})
 
 
@@ -454,16 +438,8 @@ def user_profile(request):
         except PropertyProfile.DoesNotExist:
             pass
 
-    is_merchant = (
-        user.assigned_identities.filter(identity_type='MERCHANT').exists()
-        or user.active_identity == 'MERCHANT'
-        or hasattr(user, 'merchant_profile')
-    )
-    is_property = (
-        user.assigned_identities.filter(identity_type='PROPERTY').exists()
-        or user.active_identity == 'PROPERTY'
-        or hasattr(user, 'property_profile')
-    )
+    is_merchant = MerchantProfile.objects.filter(user=user).exists()
+    is_property = PropertyProfile.objects.filter(user=user).exists()
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
