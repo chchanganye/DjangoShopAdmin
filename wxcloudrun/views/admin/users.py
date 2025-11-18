@@ -81,11 +81,16 @@ def admin_users(request, admin):
                         'file_id': '',
                         'url': u.avatar_url
                     }
+            is_merchant = MerchantProfile.objects.filter(user=u).exists()
+            is_property = PropertyProfile.objects.filter(user=u).exists()
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
                 'nickname': u.nickname,
                 'identity_type': u.active_identity,
+                'active_identity': u.active_identity,
+                'is_merchant': is_merchant,
+                'is_property': is_property,
                 'avatar': avatar_data,
                 'phone_number': u.phone_number,
                 'daily_points': u.daily_points,
@@ -220,6 +225,9 @@ def admin_users(request, admin):
             'avatar_url': user.avatar_url,
             'phone_number': user.phone_number,
             'identity_type': user.active_identity,
+            'active_identity': user.active_identity,
+            'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
+            'is_property': PropertyProfile.objects.filter(user=user).exists(),
             'daily_points': user.daily_points,
             'total_points': user.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
@@ -394,6 +402,9 @@ def admin_users_detail(request, admin, system_id):
             'avatar': avatar_data,
             'phone_number': user.phone_number,
             'identity_type': user.active_identity,
+            'active_identity': user.active_identity,
+            'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
+            'is_property': PropertyProfile.objects.filter(user=user).exists(),
             'daily_points': user.daily_points,
             'total_points': user.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,

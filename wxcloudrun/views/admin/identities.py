@@ -37,7 +37,13 @@ def admin_identity_assign(request, admin, system_id):
         return json_err('商户与物业身份不可同时存在，请先撤销现有身份', status=400)
 
     UserAssignedIdentity.objects.get_or_create(user=user, identity_type=identity_type)
-    result = {'system_id': user.system_id, 'assigned': identity_type}
+    result = {
+        'system_id': user.system_id,
+        'assigned': identity_type,
+        'active_identity': user.active_identity,
+        'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
+        'is_property': PropertyProfile.objects.filter(user=user).exists(),
+    }
     
     if identity_type == 'MERCHANT':
         need_create = not hasattr(user, 'merchant_profile')
@@ -96,6 +102,9 @@ def admin_identity_assign(request, admin, system_id):
                 return json_err('物业不存在', status=404)
         user.active_identity = 'MERCHANT'
         user.save()
+        result['active_identity'] = user.active_identity
+        result['is_merchant'] = MerchantProfile.objects.filter(user=user).exists()
+        result['is_property'] = PropertyProfile.objects.filter(user=user).exists()
         m = user.merchant_profile
         result['merchant'] = {
             'merchant_id': m.merchant_id,
@@ -143,6 +152,9 @@ def admin_identity_assign(request, admin, system_id):
         user.owner_property = user.property_profile
         user.active_identity = 'PROPERTY'
         user.save()
+        result['active_identity'] = user.active_identity
+        result['is_merchant'] = MerchantProfile.objects.filter(user=user).exists()
+        result['is_property'] = PropertyProfile.objects.filter(user=user).exists()
         p = user.property_profile
         result['property'] = {
             'property_id': p.property_id,
@@ -174,7 +186,13 @@ def admin_identity_revoke(request, admin, system_id):
     if user.active_identity == identity_type:
         user.active_identity = 'OWNER'
         user.save()
-    return json_ok({'system_id': user.system_id, 'revoked': identity_type})
+    return json_ok({
+        'system_id': user.system_id,
+        'revoked': identity_type,
+        'active_identity': user.active_identity,
+        'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
+        'is_property': PropertyProfile.objects.filter(user=user).exists(),
+    })
 
 
 @admin_token_required
@@ -204,4 +222,9 @@ def admin_identity_active_set(request, admin, system_id):
 
     user.active_identity = identity_type
     user.save()
-    return json_ok({'system_id': user.system_id, 'active_identity': user.active_identity})
+    return json_ok({
+        'system_id': user.system_id,
+        'active_identity': user.active_identity,
+        'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
+        'is_property': PropertyProfile.objects.filter(user=user).exists(),
+    })
