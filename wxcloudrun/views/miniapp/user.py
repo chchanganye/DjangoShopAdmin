@@ -64,8 +64,16 @@ def user_login(request):
                 'url': user.avatar_url
             }
     
-    is_merchant = user.assigned_identities.filter(identity_type='MERCHANT').exists()
-    is_property = user.assigned_identities.filter(identity_type='PROPERTY').exists()
+    is_merchant = (
+        user.assigned_identities.filter(identity_type='MERCHANT').exists()
+        or user.active_identity == 'MERCHANT'
+        or hasattr(user, 'merchant_profile')
+    )
+    is_property = (
+        user.assigned_identities.filter(identity_type='PROPERTY').exists()
+        or user.active_identity == 'PROPERTY'
+        or hasattr(user, 'property_profile')
+    )
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
@@ -375,7 +383,17 @@ def user_set_active_identity(request):
     # 不允许同时拥有 MERCHANT 与 PROPERTY（assign 已防止，这里仅切换）
     user.active_identity = identity_type
     user.save()
-    return json_ok({'active_identity': user.active_identity, 'available_identities': [ai.identity_type for ai in user.assigned_identities.all()]})
+    is_merchant = (
+        user.assigned_identities.filter(identity_type='MERCHANT').exists()
+        or user.active_identity == 'MERCHANT'
+        or hasattr(user, 'merchant_profile')
+    )
+    is_property = (
+        user.assigned_identities.filter(identity_type='PROPERTY').exists()
+        or user.active_identity == 'PROPERTY'
+        or hasattr(user, 'property_profile')
+    )
+    return json_ok({'active_identity': user.active_identity, 'is_merchant': is_merchant, 'is_property': is_property})
 
 
 @openid_required
@@ -436,11 +454,24 @@ def user_profile(request):
         except PropertyProfile.DoesNotExist:
             pass
 
+    is_merchant = (
+        user.assigned_identities.filter(identity_type='MERCHANT').exists()
+        or user.active_identity == 'MERCHANT'
+        or hasattr(user, 'merchant_profile')
+    )
+    is_property = (
+        user.assigned_identities.filter(identity_type='PROPERTY').exists()
+        or user.active_identity == 'PROPERTY'
+        or hasattr(user, 'property_profile')
+    )
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
         'identity_type': user.active_identity,
+        'active_identity': user.active_identity,
+        'is_merchant': is_merchant,
+        'is_property': is_property,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null
         'phone_number': user.phone_number,
         'daily_points': user.daily_points,      # 当日积分
@@ -541,3 +572,4 @@ def properties_public_list(request):
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
+
