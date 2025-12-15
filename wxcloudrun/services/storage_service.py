@@ -86,7 +86,11 @@ def generate_storage_path(filename: str, directory: str = 'category-icons') -> s
 
 
 def get_phone_number_by_code(code: str):
-    data = wx_openapi_post('openapi/phonenumber/getPhoneNumber', {
+    """
+    通过code换取用户手机号
+    接口路径：wxa/business/getuserphonenumber
+    """
+    data = wx_openapi_post('wxa/business/getuserphonenumber', {
         'code': code,
     })
     return data.get('phone_info') or {}
