@@ -57,8 +57,6 @@ def admin_identity_assign(request, admin, system_id):
                 return json_err('商户名称为必填项', status=400)
             if not category_id:
                 return json_err('商户分类为必填项', status=400)
-            if not contact_phone:
-                return json_err('商户电话为必填项', status=400)
             if not address:
                 return json_err('商户地址为必填项', status=400)
             if not banner_file_id:
@@ -84,7 +82,7 @@ def admin_identity_assign(request, admin, system_id):
                 mp.description = body.get('merchant_description', '')
             if address:
                 mp.address = address
-            if contact_phone:
+            if 'merchant_phone' in body:
                 mp.contact_phone = contact_phone
             if banner_file_id:
                 mp.banner_url = banner_file_id

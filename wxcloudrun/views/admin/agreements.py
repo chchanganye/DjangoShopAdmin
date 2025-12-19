@@ -5,6 +5,7 @@ from datetime import datetime
 from django.views.decorators.http import require_http_methods
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
+from django.core.exceptions import ObjectDoesNotExist
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
@@ -61,7 +62,7 @@ def admin_contract_image(request, admin):
 def admin_contract_signature(request, admin):
     """查询所有商户/物业用户当前合同签名列表（游标分页）"""
     setting = ContractSetting.get_solo()
-    current_contract_id = setting.contract_file_id or ''
+    default_contract_id = setting.contract_file_id or ''
     
     limit_param = request.GET.get('limit')
     page_size = 20
@@ -96,19 +97,38 @@ def admin_contract_signature(request, admin):
         if not cursor_filter:
             return json_err('cursor 无效', status=400)
 
-    users_qs = UserInfo.objects.filter(identity_type__in=['MERCHANT', 'PROPERTY']).order_by('-updated_at', '-id')
+    users_qs = UserInfo.objects.select_related('merchant_profile', 'property_profile').filter(
+        Q(merchant_profile__isnull=False) | Q(property_profile__isnull=False)
+    ).order_by('-updated_at', '-id')
     if cursor_filter:
         cursor_dt, cursor_pk = cursor_filter
         users_qs = users_qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
     users = list(users_qs[: page_size + 1])
 
+    user_ids = [u.id for u in users]
+    user_current_contract_map = {}
+    contract_ids = set()
+    for u in users:
+        current_contract_id = default_contract_id
+        try:
+            merchant = u.merchant_profile
+        except ObjectDoesNotExist:
+            merchant = None
+        if merchant and merchant.contract_file_id:
+            current_contract_id = merchant.contract_file_id
+        user_current_contract_map[u.id] = current_contract_id
+        if current_contract_id:
+            contract_ids.add(current_contract_id)
+
     signatures = []
     signature_map = {}
-    if current_contract_id:
-        user_ids = [u.id for u in users]
-        records = UserContractSignature.objects.select_related('user').filter(contract_file_id=current_contract_id, user_id__in=user_ids)
+    if user_ids and contract_ids:
+        records = UserContractSignature.objects.select_related('user').filter(
+            user_id__in=user_ids,
+            contract_file_id__in=list(contract_ids),
+        )
         signatures = list(records)
-        signature_map = {r.user_id: r for r in signatures}
+        signature_map = {(r.user_id, r.contract_file_id): r for r in signatures}
 
     # 收集所有需要生成临时URL的文件ID
     file_ids = []
@@ -122,7 +142,8 @@ def admin_contract_signature(request, admin):
     sliced = users[:page_size]
     items = []
     for u in sliced:
-        record = signature_map.get(u.id)
+        current_contract_id = user_current_contract_map.get(u.id) or ''
+        record = signature_map.get((u.id, current_contract_id))
         signed = bool(record)
         signed_at = record.signed_at.strftime('%Y-%m-%d %H:%M:%S') if record and record.signed_at else None
         fid = record.signature_file_id if record else ''

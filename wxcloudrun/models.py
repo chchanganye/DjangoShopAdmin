@@ -140,6 +140,8 @@ class MerchantProfile(models.Model):
     title = models.CharField('标题', max_length=200, blank=True, default='')  # 展示标题
     description = models.TextField('简介', blank=True, default='')
     banner_url = models.CharField('横幅展示图云文件ID', max_length=255, blank=True, default='')  # 存储单张图片的云文件ID，如：cloud://xxx.jpg
+    contract_file_id = models.CharField('商户合同云文件ID', max_length=255, blank=True, default='')
+    business_license_file_id = models.CharField('营业执照云文件ID', max_length=255, blank=True, default='')
     category = models.ForeignKey(Category, verbose_name='分类', null=True, blank=True, on_delete=models.SET_NULL)
     contact_phone = models.CharField('联系电话', max_length=32, blank=True, default='')
     address = models.CharField('地址', max_length=300, blank=True, default='')

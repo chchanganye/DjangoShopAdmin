@@ -11,9 +11,10 @@ from wxcloudrun.views.miniapp.merchant import (
     merchants_list,
     merchant_detail,
     merchant_update_banner,
+    merchant_business_license,
 )
 from wxcloudrun.views.miniapp.property import properties_list, owners_by_property
-from wxcloudrun.views.miniapp.points import threshold_query, points_change
+from wxcloudrun.views.miniapp.points import threshold_query, points_change, merchant_points_add
 from wxcloudrun.views.miniapp.contract import contract_image
 from wxcloudrun.views.miniapp.signature import contract_signature_status, contract_signature_update
 from wxcloudrun.views.miniapp.user import user_set_active_identity
@@ -28,10 +29,12 @@ __all__ = [
     'merchants_list',
     'merchant_detail',
     'merchant_update_banner',
+    'merchant_business_license',
     'properties_list',
     'owners_by_property',
     'threshold_query',
     'points_change',
+    'merchant_points_add',
     'contract_image',
     'contract_signature_status',
     'contract_signature_update',

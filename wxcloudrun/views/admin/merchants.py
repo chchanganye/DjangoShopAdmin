@@ -56,7 +56,14 @@ def admin_merchants(request, admin):
         cursor_dt, cursor_pk = cursor_filter
         qs = qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
     merchants = list(qs[: page_size + 1])
-    all_file_ids = [m.banner_url for m in merchants if m.banner_url and m.banner_url.startswith('cloud://')]
+    all_file_ids = []
+    for m in merchants:
+        if m.banner_url and m.banner_url.startswith('cloud://'):
+            all_file_ids.append(m.banner_url)
+        if m.contract_file_id and m.contract_file_id.startswith('cloud://'):
+            all_file_ids.append(m.contract_file_id)
+        if m.business_license_file_id and m.business_license_file_id.startswith('cloud://'):
+            all_file_ids.append(m.business_license_file_id)
     temp_urls = get_temp_file_urls(all_file_ids) if all_file_ids else {}
     has_more = len(merchants) > page_size
     sliced = merchants[:page_size]
@@ -68,6 +75,18 @@ def admin_merchants(request, admin):
                 'file_id': m.banner_url,
                 'url': temp_urls.get(m.banner_url, '') if m.banner_url.startswith('cloud://') else m.banner_url
             }
+        contract_data = None
+        if m.contract_file_id:
+            contract_data = {
+                'file_id': m.contract_file_id,
+                'url': temp_urls.get(m.contract_file_id, '') if m.contract_file_id.startswith('cloud://') else m.contract_file_id
+            }
+        business_license_data = None
+        if m.business_license_file_id:
+            business_license_data = {
+                'file_id': m.business_license_file_id,
+                'url': temp_urls.get(m.business_license_file_id, '') if m.business_license_file_id.startswith('cloud://') else m.business_license_file_id
+            }
         items.append({
             'openid': m.user.openid if m.user else None,
             'merchant_id': m.merchant_id,
@@ -75,6 +94,8 @@ def admin_merchants(request, admin):
             'title': m.title,
             'description': m.description,
             'banner': banner_data,
+            'contract': contract_data,
+            'business_license': business_license_data,
             'category_id': m.category.id if m.category else None,
             'category_name': m.category.name if m.category else None,
             'contact_phone': m.contact_phone,
@@ -114,6 +135,16 @@ def admin_merchants_detail(request, admin, openid):
                 delete_cloud_files([merchant.banner_url])
             except WxOpenApiError as exc:
                 logger.warning(f"删除商户横幅图失败: {merchant.banner_url}, error={exc}")
+        if merchant.contract_file_id and merchant.contract_file_id.startswith('cloud://'):
+            try:
+                delete_cloud_files([merchant.contract_file_id])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除商户合同文件失败: {merchant.contract_file_id}, error={exc}")
+        if merchant.business_license_file_id and merchant.business_license_file_id.startswith('cloud://'):
+            try:
+                delete_cloud_files([merchant.business_license_file_id])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除商户营业执照文件失败: {merchant.business_license_file_id}, error={exc}")
         merchant.delete()
         return json_ok({'openid': openid, 'deleted': True})
     
@@ -153,6 +184,15 @@ def admin_merchants_detail(request, admin, openid):
             merchant.category = None
     if 'contact_phone' in body:
         merchant.contact_phone = body.get('contact_phone', '')
+    if 'contract_file_id' in body:
+        new_file_id = body.get('contract_file_id') or ''
+        old_file_id = merchant.contract_file_id or ''
+        if old_file_id and old_file_id.startswith('cloud://') and old_file_id != new_file_id:
+            try:
+                delete_cloud_files([old_file_id])
+            except WxOpenApiError as exc:
+                logger.warning(f"删除旧商户合同文件失败: {old_file_id}, error={exc}")
+        merchant.contract_file_id = new_file_id
     if 'address' in body:
         merchant.address = body.get('address', '')
     if 'positive_rating_percent' in body:
@@ -180,11 +220,30 @@ def admin_merchants_detail(request, admin, openid):
         
         # 获取横幅图临时URL
         banner_data = None
+        file_ids = []
+        if merchant.banner_url and merchant.banner_url.startswith('cloud://'):
+            file_ids.append(merchant.banner_url)
+        if merchant.contract_file_id and merchant.contract_file_id.startswith('cloud://'):
+            file_ids.append(merchant.contract_file_id)
+        if merchant.business_license_file_id and merchant.business_license_file_id.startswith('cloud://'):
+            file_ids.append(merchant.business_license_file_id)
+        temp_urls = get_temp_file_urls(file_ids) if file_ids else {}
         if merchant.banner_url:
-            temp_urls = get_temp_file_urls([merchant.banner_url]) if merchant.banner_url.startswith('cloud://') else {}
             banner_data = {
                 'file_id': merchant.banner_url,
                 'url': temp_urls.get(merchant.banner_url, '') if merchant.banner_url.startswith('cloud://') else merchant.banner_url
+            }
+        contract_data = None
+        if merchant.contract_file_id:
+            contract_data = {
+                'file_id': merchant.contract_file_id,
+                'url': temp_urls.get(merchant.contract_file_id, '') if merchant.contract_file_id.startswith('cloud://') else merchant.contract_file_id
+            }
+        business_license_data = None
+        if merchant.business_license_file_id:
+            business_license_data = {
+                'file_id': merchant.business_license_file_id,
+                'url': temp_urls.get(merchant.business_license_file_id, '') if merchant.business_license_file_id.startswith('cloud://') else merchant.business_license_file_id
             }
         
         return json_ok({
@@ -194,6 +253,8 @@ def admin_merchants_detail(request, admin, openid):
             'title': merchant.title,
             'description': merchant.description,
             'banner': banner_data,
+            'contract': contract_data,
+            'business_license': business_license_data,
             'category_id': merchant.category.id if merchant.category else None,
             'category_name': merchant.category.name if merchant.category else None,
             'contact_phone': merchant.contact_phone,
@@ -209,4 +270,3 @@ def admin_merchants_detail(request, admin, openid):
     except Exception as e:
         logger.error(f'更新商户失败: {str(e)}')
         return json_err(f'更新失败: {str(e)}', status=400)
-

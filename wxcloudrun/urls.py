@@ -26,16 +26,18 @@ from wxcloudrun.views import (
     merchants_list,
     merchant_detail,
     merchant_update_banner,
+    merchant_business_license,
     properties_list,
     owners_by_property,
     threshold_query,
     points_change,
+    merchant_points_add,
     contract_image,
     contract_signature_status,
     contract_signature_update,
 )
 from wxcloudrun import views  # 管理员视图
-from django.conf.urls import url
+from django.urls import re_path as url
 
 urlpatterns = (
     # ========== 小程序端接口 ==========
@@ -55,6 +57,7 @@ urlpatterns = (
     url(r'^api/merchants/?$', merchants_list),
     url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', merchant_detail),
     url(r'^api/merchant/banner/?$', merchant_update_banner),                  # PUT 商户更新横幅
+    url(r'^api/merchant/license/?$', merchant_business_license),              # GET/PUT 商户营业执照
 
     # 物业信息
     url(r'^api/properties/?$', properties_list),
@@ -67,6 +70,8 @@ urlpatterns = (
 
     # 积分变更
     url(r'^api/points/change/?$', points_change),
+    # 商户为用户增加积分（手机号+金额）
+    url(r'^api/points/merchant/add/?$', merchant_points_add),
     # 协议合同图片
     url(r'^api/contract/image/?$', contract_image),
     # 合同签名（状态与提交）

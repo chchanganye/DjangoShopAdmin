@@ -166,9 +166,7 @@ def admin_users(request, admin):
             if not category_id:
                 return json_err('商户分类为必填项', status=400)
             
-            contact_phone = body.get('merchant_phone')
-            if not contact_phone:
-                return json_err('商户电话为必填项', status=400)
+            contact_phone = body.get('merchant_phone') or ''
             
             address = body.get('merchant_address')
             if not address:
@@ -318,15 +316,13 @@ def admin_users_detail(request, admin, system_id):
                 if need_create:
                     merchant_name = body.get('merchant_name')
                     category_id = body.get('category_id')
-                    contact_phone = body.get('merchant_phone')
+                    contact_phone = body.get('merchant_phone') or ''
                     address = body.get('merchant_address')
                     banner_file_id = body.get('banner_file_id')
                     if not merchant_name:
                         return json_err('商户名称为必填项', status=400)
                     if not category_id:
                         return json_err('商户分类为必填项', status=400)
-                    if not contact_phone:
-                        return json_err('商户电话为必填项', status=400)
                     if not address:
                         return json_err('商户地址为必填项', status=400)
                     if not banner_file_id:

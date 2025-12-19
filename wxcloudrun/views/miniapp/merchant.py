@@ -308,3 +308,88 @@ def merchant_update_banner(request):
         logger.error(f'更新商户横幅失败: {str(exc)}', exc_info=True)
         return json_err(f'更新失败: {str(exc)}', status=400)
 
+
+@openid_required
+@require_http_methods(["GET", "PUT"])
+def merchant_business_license(request):
+    """商户上传/查询营业执照
+    - 只有商户身份的用户可以调用
+    - 自动删除旧营业执照文件
+    """
+    openid = get_openid(request)
+
+    try:
+        user = UserInfo.objects.get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if user.active_identity != 'MERCHANT':
+        return json_err('只有商户用户可以操作营业执照', status=403)
+
+    try:
+        merchant = MerchantProfile.objects.get(user=user)
+    except MerchantProfile.DoesNotExist:
+        return json_err('商户档案不存在', status=404)
+
+    if request.method == 'GET':
+        fid = (merchant.business_license_file_id or '').strip()
+        temp_urls = get_temp_file_urls([fid]) if fid and fid.startswith('cloud://') else {}
+        data = None
+        if fid:
+            data = {
+                'file_id': fid,
+                'url': temp_urls.get(fid, '') if fid.startswith('cloud://') else fid,
+            }
+        return json_ok({
+            'merchant_id': merchant.merchant_id,
+            'business_license': data,
+        })
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    if 'business_license_file_id' not in body and 'license_file_id' not in body:
+        return json_err('缺少参数 business_license_file_id', status=400)
+
+    new_license = (body.get('business_license_file_id') or body.get('license_file_id') or '').strip()
+    old_license = (merchant.business_license_file_id or '').strip()
+
+    if new_license:
+        if '127.0.0.1' in new_license or 'localhost' in new_license or '__tmp__' in new_license:
+            logger.warning(f"拒绝本地临时文件路径: {new_license}")
+            return json_err(
+                '不能使用本地临时文件路径。请先使用 wx.cloud.uploadFile 上传到云存储，'
+                '再提交返回的 fileID（cloud:// 开头）',
+                status=400
+            )
+        if not new_license.startswith('cloud://'):
+            logger.warning(f"无效的营业执照文件ID: {new_license}")
+            return json_err('营业执照文件ID格式不正确，必须是云存储文件ID（cloud:// 开头）', status=400)
+
+    if new_license != old_license and old_license.startswith('cloud://'):
+        try:
+            delete_cloud_files([old_license])
+            logger.info(f"已删除旧营业执照: {old_license}")
+        except WxOpenApiError as exc:
+            logger.warning(f"删除旧营业执照失败: {old_license}, error={exc}")
+
+    merchant.business_license_file_id = new_license
+    try:
+        merchant.save()
+        temp_urls = get_temp_file_urls([new_license]) if new_license and new_license.startswith('cloud://') else {}
+        data = None
+        if new_license:
+            data = {
+                'file_id': new_license,
+                'url': temp_urls.get(new_license, '') if new_license.startswith('cloud://') else new_license,
+            }
+        return json_ok({
+            'merchant_id': merchant.merchant_id,
+            'business_license': data,
+            'message': '营业执照更新成功'
+        })
+    except Exception as exc:
+        logger.error(f'更新营业执照失败: {str(exc)}', exc_info=True)
+        return json_err(f'更新失败: {str(exc)}', status=400)

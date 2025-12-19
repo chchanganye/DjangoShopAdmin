@@ -171,16 +171,18 @@ def user_update_profile(request):
     
     # 物业绑定处理：所有身份只能在第一次绑定物业，之后不能修改
     if 'owner_property_id' in body:
-        property_id = body['owner_property_id']
-        
-        # 检查用户是否已经绑定了物业
-        if user.owner_property:
-            return json_err('您已绑定物业，不能再次修改', status=400)
-        
+        property_id = body.get('owner_property_id')
+        property_id = str(property_id).strip() if property_id is not None else ''
+
+        # 允许缺省：不绑定也不解绑（前端可不选物业）
         if property_id:
+            # 检查用户是否已经绑定了物业
+            if user.owner_property:
+                return json_err('您已绑定物业，不能再次修改', status=400)
+
             try:
                 property_profile = PropertyProfile.objects.get(property_id=property_id)
-                
+
                 # 如果用户是物业身份，只能绑定自己的物业
                 if user.identity_type == 'PROPERTY':
                     # 检查用户是否有对应的物业档案
@@ -188,18 +190,16 @@ def user_update_profile(request):
                         user_property_profile = user.property_profile
                     except PropertyProfile.DoesNotExist:
                         return json_err('物业身份用户未找到对应的物业档案', status=400)
-                    
+
                     # 验证是否绑定的是自己的物业
                     if user_property_profile.property_id != property_id:
                         return json_err('物业身份用户只能绑定自己的物业', status=400)
-                
+
                 user.owner_property = property_profile
             except PropertyProfile.DoesNotExist:
                 return json_err('物业不存在', status=404)
-        else:
-            # 不允许传入空值来解除物业绑定
-            return json_err('物业绑定后不能解除', status=400)
-    elif user.active_identity == 'PROPERTY' and not user.owner_property:
+
+    if user.active_identity == 'PROPERTY' and not user.owner_property:
         # 物业身份用户如果还没有绑定物业，自动绑定自己的物业
         try:
             user_property_profile = user.property_profile
@@ -548,4 +548,3 @@ def properties_public_list(request):
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
-
