@@ -2,7 +2,7 @@
 from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import openid_required
-from wxcloudrun.utils.responses import json_ok
+from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.models import Category
 from datetime import datetime
 from django.db.models import Q
@@ -59,10 +59,10 @@ def categories_list(request):
         icon_file_id = c.icon_file_id or ''
         icon_url = resolve_icon_url(icon_file_id, temp_urls)
         items.append({
+            'id': c.id,
             'name': c.name,
             'icon_file_id': icon_file_id,
             'icon_url': icon_url,
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
-
