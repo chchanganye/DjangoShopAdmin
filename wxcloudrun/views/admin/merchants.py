@@ -100,6 +100,8 @@ def admin_merchants(request, admin):
             'category_name': m.category.name if m.category else None,
             'contact_phone': m.contact_phone,
             'address': m.address,
+            'latitude': float(m.latitude) if m.latitude is not None else None,
+            'longitude': float(m.longitude) if m.longitude is not None else None,
             'positive_rating_percent': m.positive_rating_percent,
             'open_hours': m.open_hours,
             'gallery': m.gallery or [],
@@ -195,6 +197,30 @@ def admin_merchants_detail(request, admin, openid):
         merchant.contract_file_id = new_file_id
     if 'address' in body:
         merchant.address = body.get('address', '')
+    if 'latitude' in body:
+        latitude_value = body.get('latitude')
+        if latitude_value in (None, ''):
+            merchant.latitude = None
+        else:
+            try:
+                latitude = Decimal(str(latitude_value))
+            except Exception:
+                return json_err('latitude 必须为数值', status=400)
+            if latitude < Decimal('-90') or latitude > Decimal('90'):
+                return json_err('latitude 超出范围（-90~90）', status=400)
+            merchant.latitude = latitude
+    if 'longitude' in body:
+        longitude_value = body.get('longitude')
+        if longitude_value in (None, ''):
+            merchant.longitude = None
+        else:
+            try:
+                longitude = Decimal(str(longitude_value))
+            except Exception:
+                return json_err('longitude 必须为数值', status=400)
+            if longitude < Decimal('-180') or longitude > Decimal('180'):
+                return json_err('longitude 超出范围（-180~180）', status=400)
+            merchant.longitude = longitude
     if 'positive_rating_percent' in body:
         merchant.positive_rating_percent = body.get('positive_rating_percent', 0)
     if 'open_hours' in body:
@@ -259,6 +285,8 @@ def admin_merchants_detail(request, admin, openid):
             'category_name': merchant.category.name if merchant.category else None,
             'contact_phone': merchant.contact_phone,
             'address': merchant.address,
+            'latitude': float(merchant.latitude) if merchant.latitude is not None else None,
+            'longitude': float(merchant.longitude) if merchant.longitude is not None else None,
             'positive_rating_percent': merchant.positive_rating_percent,
             'open_hours': merchant.open_hours,
             'gallery': merchant.gallery or [],

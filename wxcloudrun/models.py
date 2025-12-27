@@ -145,6 +145,8 @@ class MerchantProfile(models.Model):
     category = models.ForeignKey(Category, verbose_name='分类', null=True, blank=True, on_delete=models.SET_NULL)
     contact_phone = models.CharField('联系电话', max_length=32, blank=True, default='')
     address = models.CharField('地址', max_length=300, blank=True, default='')
+    latitude = models.DecimalField('纬度', max_digits=10, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField('经度', max_digits=10, decimal_places=6, null=True, blank=True)
     positive_rating_percent = models.IntegerField('好评率(%)', default=0)  # 0-100
     open_hours = models.CharField('营业时间', max_length=255, blank=True, default='')
     gallery = models.JSONField('图集', default=list, blank=True)
