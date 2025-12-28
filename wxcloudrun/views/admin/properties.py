@@ -14,51 +14,37 @@ logger = logging.getLogger('log')
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_properties(request, admin):
-    from datetime import datetime
-    from django.db.models import Q
-    from django.utils.dateparse import parse_datetime
-    limit_param = request.GET.get('limit')
+    current_param = request.GET.get('current') or request.GET.get('page')
+    size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
+
+    page = 1
     page_size = 20
-    if limit_param:
+
+    if current_param:
         try:
-            page_size = int(limit_param)
+            page = int(current_param)
         except (TypeError, ValueError):
-            return json_err('limit 必须为数字', status=400)
+            return json_err('current 必须为数字', status=400)
+    if size_param:
+        try:
+            page_size = int(size_param)
+        except (TypeError, ValueError):
+            return json_err('size 必须为数字', status=400)
+    if page < 1:
+        page = 1
     if page_size < 1:
         page_size = 1
     if page_size > 100:
         page_size = 100
-    cursor_param = (request.GET.get('cursor') or '').strip()
-    cursor_filter = None
-    if cursor_param:
-        parts = cursor_param.split('#', 1)
-        if len(parts) == 2:
-            ts_str, pk_str = parts
-            dt = parse_datetime(ts_str)
-            if not dt:
-                try:
-                    dt = datetime.fromisoformat(ts_str)
-                except ValueError:
-                    dt = None
-            try:
-                pk_val = int(pk_str)
-            except (TypeError, ValueError):
-                pk_val = None
-            if dt and pk_val is not None:
-                cursor_filter = (dt, pk_val)
-        if not cursor_filter:
-            return json_err('cursor 无效', status=400)
+
     qs = PropertyProfile.objects.select_related('user').all().order_by('-updated_at', '-id')
-    if cursor_filter:
-        cursor_dt, cursor_pk = cursor_filter
-        qs = qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
-    properties = list(qs[: page_size + 1])
-    property_ids = [p.id for p in properties[:page_size]]
+    total = qs.count()
+    start = (page - 1) * page_size
+    properties = list(qs[start : start + page_size])
+    property_ids = [p.id for p in properties]
     thresholds = {th.property.id: th.min_points for th in PointsThreshold.objects.select_related('property').filter(property_id__in=property_ids)}
-    has_more = len(properties) > page_size
-    sliced = properties[:page_size]
     items = []
-    for p in sliced:
+    for p in properties:
         min_points = thresholds.get(p.id, 0)
         items.append({
             'openid': p.user.openid if p.user else None,
@@ -69,8 +55,7 @@ def admin_properties(request, admin):
             'total_points': p.user.total_points if p.user else 0,
             'min_points': min_points,
         })
-    next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
-    return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
+    return json_ok({'list': items, 'total': total})
 
 
 @admin_token_required

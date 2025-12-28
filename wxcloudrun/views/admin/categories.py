@@ -22,51 +22,37 @@ logger = logging.getLogger('log')
 def admin_categories(request, admin):
     """分类管理 - GET列表 / POST创建"""
     if request.method == 'GET':
-        from datetime import datetime
-        from django.db.models import Q
-        from django.utils.dateparse import parse_datetime
-        limit_param = request.GET.get('limit')
+        current_param = request.GET.get('current') or request.GET.get('page')
+        size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
+
+        page = 1
         page_size = 20
-        if limit_param:
+
+        if current_param:
             try:
-                page_size = int(limit_param)
+                page = int(current_param)
             except (TypeError, ValueError):
-                return json_err('limit 必须为数字', status=400)
+                return json_err('current 必须为数字', status=400)
+        if size_param:
+            try:
+                page_size = int(size_param)
+            except (TypeError, ValueError):
+                return json_err('size 必须为数字', status=400)
+        if page < 1:
+            page = 1
         if page_size < 1:
             page_size = 1
         if page_size > 100:
             page_size = 100
-        cursor_param = (request.GET.get('cursor') or '').strip()
-        cursor_filter = None
-        if cursor_param:
-            parts = cursor_param.split('#', 1)
-            if len(parts) == 2:
-                ts_str, pk_str = parts
-                dt = parse_datetime(ts_str)
-                if not dt:
-                    try:
-                        dt = datetime.fromisoformat(ts_str)
-                    except ValueError:
-                        dt = None
-                try:
-                    pk_val = int(pk_str)
-                except (TypeError, ValueError):
-                    pk_val = None
-                if dt and pk_val is not None:
-                    cursor_filter = (dt, pk_val)
-            if not cursor_filter:
-                return json_err('cursor 无效', status=400)
+
         qs = Category.objects.all().order_by('-updated_at', '-id')
-        if cursor_filter:
-            cursor_dt, cursor_pk = cursor_filter
-            qs = qs.filter(Q(updated_at__lt=cursor_dt) | Q(updated_at=cursor_dt, id__lt=cursor_pk))
-        categories = list(qs[: page_size + 1])
+        total = qs.count()
+        start = (page - 1) * page_size
+        categories = list(qs[start : start + page_size])
         icon_file_ids = [c.icon_file_id for c in categories if c.icon_file_id and c.icon_file_id.startswith('cloud://')]
         temp_urls = get_temp_file_urls(icon_file_ids)
-        has_more = len(categories) > page_size
-        sliced = categories[:page_size]
         items = []
-        for c in sliced:
+        for c in categories:
             icon_file_id = c.icon_file_id or ''
             icon_url = resolve_icon_url(icon_file_id, temp_urls)
             items.append({
@@ -75,8 +61,7 @@ def admin_categories(request, admin):
                 'icon_file_id': icon_file_id,
                 'icon_url': icon_url,
             })
-        next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
-        return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
+        return json_ok({'list': items, 'total': total})
     
     # POST 创建
     try:
