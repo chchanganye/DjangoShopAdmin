@@ -483,6 +483,8 @@ def user_profile(request):
                 'category_name': merchant.category.name if merchant.category else None,
                 'contact_phone': merchant.contact_phone,
                 'address': merchant.address,
+                'latitude': float(merchant.latitude) if merchant.latitude is not None else None,
+                'longitude': float(merchant.longitude) if merchant.longitude is not None else None,
                 'positive_rating_percent': merchant.positive_rating_percent,
                 'open_hours': merchant.open_hours,
                 'gallery': merchant.gallery or [],

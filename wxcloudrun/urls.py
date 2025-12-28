@@ -27,6 +27,7 @@ from wxcloudrun.views import (
     merchant_detail,
     merchant_update_banner,
     merchant_business_license,
+    merchant_update_location,
     properties_list,
     owners_by_property,
     threshold_query,
@@ -58,6 +59,7 @@ urlpatterns = (
     url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', merchant_detail),
     url(r'^api/merchant/banner/?$', merchant_update_banner),                  # PUT 商户更新横幅
     url(r'^api/merchant/license/?$', merchant_business_license),              # GET/PUT 商户营业执照
+    url(r'^api/merchant/location/?$', merchant_update_location),              # PUT 商户更新定位
 
     # 物业信息
     url(r'^api/properties/?$', properties_list),

@@ -12,6 +12,7 @@ from wxcloudrun.views.miniapp.merchant import (
     merchant_detail,
     merchant_update_banner,
     merchant_business_license,
+    merchant_update_location,
 )
 from wxcloudrun.views.miniapp.property import properties_list, owners_by_property
 from wxcloudrun.views.miniapp.points import threshold_query, points_change, merchant_points_add
@@ -30,6 +31,7 @@ __all__ = [
     'merchant_detail',
     'merchant_update_banner',
     'merchant_business_license',
+    'merchant_update_location',
     'properties_list',
     'owners_by_property',
     'threshold_query',

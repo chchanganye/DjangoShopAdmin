@@ -2,6 +2,7 @@
 import json
 import logging
 from datetime import datetime
+from decimal import Decimal
 
 from django.db.models import Q
 from django.utils.dateparse import parse_datetime
@@ -398,4 +399,70 @@ def merchant_business_license(request):
         })
     except Exception as exc:
         logger.error(f'更新营业执照失败: {str(exc)}', exc_info=True)
+        return json_err(f'更新失败: {str(exc)}', status=400)
+
+
+@openid_required
+@require_http_methods(["PUT"])
+def merchant_update_location(request):
+    """商户用户更新自己的定位信息
+    - 只有商户身份的用户可以调用
+    - 用于在地图中展示/导航到商户位置
+    """
+    openid = get_openid(request)
+
+    try:
+        user = UserInfo.objects.get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if user.active_identity != 'MERCHANT':
+        return json_err('只有商户用户可以更新定位', status=403)
+
+    try:
+        merchant = MerchantProfile.objects.get(user=user)
+    except MerchantProfile.DoesNotExist:
+        return json_err('商户档案不存在', status=404)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    latitude_value = body.get('latitude')
+    longitude_value = body.get('longitude')
+    if latitude_value in (None, '') or longitude_value in (None, ''):
+        return json_err('缺少参数 latitude/longitude', status=400)
+
+    try:
+        latitude = Decimal(str(latitude_value))
+    except Exception:
+        return json_err('latitude 必须为数值', status=400)
+    try:
+        longitude = Decimal(str(longitude_value))
+    except Exception:
+        return json_err('longitude 必须为数值', status=400)
+
+    if latitude < Decimal('-90') or latitude > Decimal('90'):
+        return json_err('latitude 超出范围（-90~90）', status=400)
+    if longitude < Decimal('-180') or longitude > Decimal('180'):
+        return json_err('longitude 超出范围（-180~180）', status=400)
+
+    merchant.latitude = latitude
+    merchant.longitude = longitude
+
+    if 'address' in body:
+        merchant.address = (body.get('address') or '').strip()
+
+    try:
+        merchant.save()
+        return json_ok({
+            'merchant_id': merchant.merchant_id,
+            'address': merchant.address,
+            'latitude': float(merchant.latitude) if merchant.latitude is not None else None,
+            'longitude': float(merchant.longitude) if merchant.longitude is not None else None,
+            'message': '定位更新成功'
+        })
+    except Exception as exc:
+        logger.error(f'更新商户定位失败: {str(exc)}', exc_info=True)
         return json_err(f'更新失败: {str(exc)}', status=400)
