@@ -270,6 +270,30 @@ class UserAssignedIdentity(models.Model):
         verbose_name_plural = '用户赋予身份'
 
 
+class ContactSetting(models.Model):
+    """联系我们配置（全局单条）"""
+
+    title = models.CharField('标题', max_length=200, blank=True, default='')
+    content = models.TextField('文案', blank=True, default='')
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'ContactSetting'
+        verbose_name = '联系我们配置'
+        verbose_name_plural = '联系我们配置'
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(id=1, defaults={'title': '联系我们', 'content': ''})
+        return obj
+
+
 
 # 协议合同配置（全局单条）
 class ContractSetting(models.Model):

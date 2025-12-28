@@ -36,6 +36,7 @@ from wxcloudrun.views import (
     contract_image,
     contract_signature_status,
     contract_signature_update,
+    contact_info,
 )
 from wxcloudrun import views  # 管理员视图
 from django.urls import re_path as url
@@ -79,6 +80,8 @@ urlpatterns = (
     # 合同签名（状态与提交）
     url(r'^api/contract/signature/status/?$', contract_signature_status),
     url(r'^api/contract/signature/?$', contract_signature_update),
+    # 联系我们
+    url(r'^api/contact/?$', contact_info),
 
     # ========== 管理员端接口 ==========
     
@@ -129,4 +132,6 @@ urlpatterns = (
     url(r'^api/admin/contract/image/?$', views.admin_contract_image),               # GET/PUT
     # 管理员-查询用户合同签名
     url(r'^api/admin/contract/signature/?$', views.admin_contract_signature),       # GET
+    # 管理员-联系我们配置
+    url(r'^api/admin/contact/?$', views.admin_contact_info),                        # GET/PUT
 )

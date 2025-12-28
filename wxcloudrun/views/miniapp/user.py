@@ -41,12 +41,9 @@ def user_login(request):
         access_log.last_access_at = datetime.now()
         access_log.save()
     
-    # 判断是否首次登录
-    is_first_login = (
-        user.identity_type == 'OWNER' 
-        and not user.phone_number 
-        and not user.owner_property
-    )
+    # 判断是否需要完善个人资料（用于前端首次登录引导）
+    # 说明：手机号绑定、所属物业选择属于可选信息，不作为“首次登录”判断条件。
+    is_first_login = (not (user.nickname or '').strip()) or (not (user.avatar_url or '').strip())
     
     # 处理头像：返回 file_id 和临时 URL
     avatar_data = None
@@ -66,12 +63,14 @@ def user_login(request):
     
     is_merchant = MerchantProfile.objects.filter(user=user).exists()
     is_property = PropertyProfile.objects.filter(user=user).exists()
+    assigned_identities = list(user.assigned_identities.values_list('identity_type', flat=True))
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
         'identity_type': user.identity_type,
         'active_identity': user.active_identity,
+        'assigned_identities': assigned_identities,
         'is_merchant': is_merchant,
         'is_property': is_property,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null
@@ -377,7 +376,13 @@ def user_set_active_identity(request):
     user.save()
     is_merchant = MerchantProfile.objects.filter(user=user).exists()
     is_property = PropertyProfile.objects.filter(user=user).exists()
-    return json_ok({'active_identity': user.active_identity, 'is_merchant': is_merchant, 'is_property': is_property})
+    assigned_identities = list(user.assigned_identities.values_list('identity_type', flat=True))
+    return json_ok({
+        'active_identity': user.active_identity,
+        'assigned_identities': assigned_identities,
+        'is_merchant': is_merchant,
+        'is_property': is_property,
+    })
 
 
 @openid_required
@@ -388,7 +393,7 @@ def user_profile(request):
     """
     openid = get_openid(request)
     try:
-        user = UserInfo.objects.select_related('owner_property__points_threshold').get(openid=openid)
+        user = UserInfo.objects.select_related('owner_property__points_threshold').prefetch_related('assigned_identities').get(openid=openid)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
 
@@ -440,12 +445,14 @@ def user_profile(request):
 
     is_merchant = MerchantProfile.objects.filter(user=user).exists()
     is_property = PropertyProfile.objects.filter(user=user).exists()
+    assigned_identities = list(user.assigned_identities.values_list('identity_type', flat=True))
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
         'nickname': user.nickname,
         'identity_type': user.active_identity,
         'active_identity': user.active_identity,
+        'assigned_identities': assigned_identities,
         'is_merchant': is_merchant,
         'is_property': is_property,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null

@@ -7,6 +7,7 @@ from wxcloudrun.views.miniapp import (
     user_set_active_identity,
     identity_apply,
     properties_public_list,
+    contact_info,
     categories_list,
     merchants_list,
     merchant_detail,
@@ -50,5 +51,6 @@ from wxcloudrun.views.admin import (
     admin_identity_assign,
     admin_identity_revoke,
     admin_identity_active_set,
+    admin_contact_info,
 )
 

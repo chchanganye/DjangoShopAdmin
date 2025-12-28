@@ -19,6 +19,7 @@ from wxcloudrun.views.miniapp.points import threshold_query, points_change, merc
 from wxcloudrun.views.miniapp.contract import contract_image
 from wxcloudrun.views.miniapp.signature import contract_signature_status, contract_signature_update
 from wxcloudrun.views.miniapp.user import user_set_active_identity
+from wxcloudrun.views.miniapp.contact import contact_info
 
 __all__ = [
     'user_login',
@@ -41,4 +42,5 @@ __all__ = [
     'contract_signature_status',
     'contract_signature_update',
     'user_set_active_identity',
+    'contact_info',
 ]

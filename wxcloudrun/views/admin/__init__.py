@@ -14,6 +14,7 @@ from wxcloudrun.views.admin.applications import (
 from wxcloudrun.views.admin.statistics import admin_statistics_overview, admin_statistics_by_time, admin_statistics_by_range, admin_statistics_last_week
 from wxcloudrun.views.admin.agreements import admin_contract_image, admin_contract_signature
 from wxcloudrun.views.admin.identities import admin_identity_assign, admin_identity_revoke, admin_identity_active_set
+from wxcloudrun.views.admin.contact import admin_contact_info
 
 __all__ = [
     'admin_login',
@@ -41,5 +42,6 @@ __all__ = [
     'admin_identity_assign',
     'admin_identity_revoke',
     'admin_identity_active_set',
+    'admin_contact_info',
 ]
 
