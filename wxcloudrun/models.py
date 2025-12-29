@@ -211,7 +211,10 @@ class PointsRecord(models.Model):
 class PointsShareSetting(models.Model):
     """积分分成配置（全局仅一条记录）"""
 
-    merchant_rate = models.PositiveIntegerField('商户积分比例(%)', default=90)
+    # 说明：
+    # - 当前规则：商户积分 = 消费金额（1:1，小数抹掉）
+    # - 该配置用于控制“业主额外奖励积分比例(%)”
+    merchant_rate = models.PositiveIntegerField('业主奖励比例(%)', default=5)
     created_at = models.DateTimeField('创建时间', default=datetime.now)
     updated_at = models.DateTimeField('更新时间', default=datetime.now)
 
@@ -222,13 +225,13 @@ class PointsShareSetting(models.Model):
 
     def save(self, *args, **kwargs):
         if self.merchant_rate < 0 or self.merchant_rate > 100:
-            raise ValueError('商户积分比例必须在 0-100 之间')
+            raise ValueError('业主奖励比例必须在 0-100 之间')
         self.updated_at = datetime.now()
         super().save(*args, **kwargs)
 
     @classmethod
     def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(id=1, defaults={'merchant_rate': 90})
+        obj, _ = cls.objects.get_or_create(id=1, defaults={'merchant_rate': 5})
         return obj
 
 

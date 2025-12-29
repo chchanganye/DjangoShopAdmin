@@ -15,13 +15,18 @@ logger = logging.getLogger('log')
 @admin_token_required
 @require_http_methods(["GET", "PUT"])
 def admin_share_setting(request, admin):
-    """积分分成配置 - GET查询 / PUT更新"""
+    """积分发放规则配置 - GET查询 / PUT更新
+
+    规则说明：
+    - 商户积分：消费金额 1:1（小数抹掉）
+    - 业主奖励：按配置比例(%)发放（取整）
+    """
     setting = get_points_share_setting()
 
     if request.method == 'GET':
         return json_ok({
-            'merchant_rate': setting.merchant_rate,
-            'property_rate': 100 - setting.merchant_rate,
+            'merchant_rate': 100,
+            'owner_rate': setting.merchant_rate,
         })
 
     try:
@@ -29,24 +34,27 @@ def admin_share_setting(request, admin):
     except Exception:
         return json_err('请求体格式错误', status=400)
 
-    merchant_rate = body.get('merchant_rate')
-    if merchant_rate is None:
-        return json_err('缺少参数 merchant_rate', status=400)
+    owner_rate = body.get('owner_rate')
+    # 兼容旧字段：merchant_rate 过去用于“商户分成”，现在作为业主奖励比例
+    if owner_rate is None:
+        owner_rate = body.get('merchant_rate')
+    if owner_rate is None:
+        return json_err('缺少参数 owner_rate', status=400)
 
     try:
-        merchant_rate = int(merchant_rate)
+        owner_rate = int(owner_rate)
     except ValueError:
-        return json_err('merchant_rate 必须是整数', status=400)
+        return json_err('owner_rate 必须是整数', status=400)
 
-    if merchant_rate < 0 or merchant_rate > 100:
-        return json_err('merchant_rate 必须在 0-100 之间', status=400)
+    if owner_rate < 0 or owner_rate > 100:
+        return json_err('owner_rate 必须在 0-100 之间', status=400)
 
-    setting.merchant_rate = merchant_rate
+    setting.merchant_rate = owner_rate
     setting.save()
 
     return json_ok({
-        'merchant_rate': setting.merchant_rate,
-        'property_rate': 100 - setting.merchant_rate,
+        'merchant_rate': 100,
+        'owner_rate': setting.merchant_rate,
     })
 
 
@@ -112,4 +120,3 @@ def admin_points_records(request, admin):
         })
     next_cursor = f"{sliced[-1].created_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
-
