@@ -3,6 +3,18 @@ from datetime import datetime
 from django.db import migrations, models
 
 
+def ensure_points_share_setting_table(apps, schema_editor):
+    """
+    兼容历史迁移：0010 使用 SeparateDatabaseAndState 仅标记 PointsShareSetting 已存在，
+    但在新环境中该表可能并未真实创建，导致后续迁移失败。
+    """
+    PointsShareSetting = apps.get_model('wxcloudrun', 'PointsShareSetting')
+    table_name = PointsShareSetting._meta.db_table
+    existing_tables = schema_editor.connection.introspection.table_names()
+    if table_name not in existing_tables:
+        schema_editor.create_model(PointsShareSetting)
+
+
 def set_default_owner_reward_rate(apps, schema_editor):
     PointsShareSetting = apps.get_model('wxcloudrun', 'PointsShareSetting')
     now = datetime.now()
@@ -20,6 +32,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(ensure_points_share_setting_table, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='pointssharesetting',
             name='merchant_rate',
@@ -27,4 +40,3 @@ class Migration(migrations.Migration):
         ),
         migrations.RunPython(set_default_owner_reward_rate, migrations.RunPython.noop),
     ]
-
