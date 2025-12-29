@@ -132,6 +132,9 @@ def admin_contract_signature(request, admin):
 
     # 收集所有需要生成临时URL的文件ID
     file_ids = []
+    for cid in contract_ids:
+        if cid and cid.startswith('cloud://'):
+            file_ids.append(cid)
     for r in signatures:
         fid = r.signature_file_id or ''
         if fid and fid.startswith('cloud://'):
@@ -153,6 +156,18 @@ def admin_contract_signature(request, admin):
                 'file_id': fid,
                 'url': resolve_icon_url(fid, temp_urls),
             }
+        contract_current = None
+        if current_contract_id:
+            contract_current = {
+                'file_id': current_contract_id,
+                'url': resolve_icon_url(current_contract_id, temp_urls),
+            }
+        contract_signed = None
+        if record and record.contract_file_id:
+            contract_signed = {
+                'file_id': record.contract_file_id,
+                'url': resolve_icon_url(record.contract_file_id, temp_urls),
+            }
         items.append({
             'openid': u.openid,
             'system_id': u.system_id,
@@ -162,6 +177,8 @@ def admin_contract_signature(request, admin):
             'signed_at': signed_at,
             'contract_file_id_signed': record.contract_file_id if record else None,
             'current_contract_file_id': current_contract_id,
+            'contract_signed': contract_signed,
+            'contract_current': contract_current,
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
