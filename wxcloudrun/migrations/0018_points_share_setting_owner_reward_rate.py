@@ -10,8 +10,8 @@ def ensure_points_share_setting_table(apps, schema_editor):
     """
     PointsShareSetting = apps.get_model('wxcloudrun', 'PointsShareSetting')
     table_name = PointsShareSetting._meta.db_table
-    existing_tables = schema_editor.connection.introspection.table_names()
-    if table_name not in existing_tables:
+    existing_tables = {t.lower() for t in schema_editor.connection.introspection.table_names()}
+    if table_name.lower() not in existing_tables:
         schema_editor.create_model(PointsShareSetting)
 
 
@@ -27,6 +27,8 @@ def set_default_owner_reward_rate(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
+
     dependencies = [
         ('wxcloudrun', '0017_contact_setting'),
     ]
