@@ -79,6 +79,8 @@ class UserInfo(models.Model):
     # 先声明为可空，后续数据建立后再填充
     owner_property = models.ForeignKey('PropertyProfile', verbose_name='所属物业', null=True, blank=True,
                                        on_delete=models.SET_NULL, related_name='owners')
+    owner_community = models.ForeignKey('Community', verbose_name='所属小区', null=True, blank=True,
+                                        on_delete=models.SET_NULL, related_name='community_owners')
 
     class Meta:
         db_table = 'UserInfo'
@@ -128,6 +130,36 @@ class PropertyProfile(models.Model):
     def save(self, *args, **kwargs):
         if not self.property_id:
             self.property_id = _generate_seq('PROPERTY', PropertyProfile, 'property_id')
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
+class Community(models.Model):
+    """小区信息（同一物业下可维护多个小区）"""
+
+    property = models.ForeignKey(PropertyProfile, verbose_name='所属物业', on_delete=models.CASCADE, related_name='communities')
+    community_id = models.CharField('小区ID', max_length=32, unique=True)
+    community_name = models.CharField('小区名称', max_length=200)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'Community'
+        indexes = [
+            models.Index(fields=['community_id']),
+            models.Index(fields=['property']),
+            models.Index(fields=['community_name']),
+        ]
+        verbose_name = '小区信息'
+        verbose_name_plural = '小区信息'
+
+    def __str__(self):
+        return f"{self.community_name}({self.community_id})"
+
+    def save(self, *args, **kwargs):
+        if not self.community_id:
+            self.community_id = _generate_seq('COMMUNITY', Community, 'community_id')
         self.updated_at = datetime.now()
         super().save(*args, **kwargs)
 

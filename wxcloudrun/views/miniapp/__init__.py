@@ -6,6 +6,7 @@ from wxcloudrun.views.miniapp.user import (
     identity_apply,
     properties_public_list,
 )
+from wxcloudrun.views.miniapp.community import communities_public_list
 from wxcloudrun.views.miniapp.category import categories_list
 from wxcloudrun.views.miniapp.merchant import (
     merchants_list,
@@ -27,6 +28,7 @@ __all__ = [
     'phone_number_resolve',
     'identity_apply',
     'properties_public_list',
+    'communities_public_list',
     'categories_list',
     'merchants_list',
     'merchant_detail',

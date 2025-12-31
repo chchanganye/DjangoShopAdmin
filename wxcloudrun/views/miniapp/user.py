@@ -10,7 +10,7 @@ from django.utils.dateparse import parse_datetime
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import UserInfo, PropertyProfile, IdentityApplication, AccessLog, MerchantProfile
+from wxcloudrun.models import UserInfo, PropertyProfile, Community, IdentityApplication, AccessLog, MerchantProfile
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files, get_phone_number_by_code
 from wxcloudrun.exceptions import WxOpenApiError
 
@@ -79,9 +79,15 @@ def user_login(request):
     }
     
     if user.owner_property:
+        community_name = ''
+        if getattr(user, 'owner_community', None):
+            community_name = user.owner_community.community_name or ''
+        else:
+            community_name = user.owner_property.community_name or ''
         data['property'] = {
             'property_id': user.owner_property.property_id,
             'property_name': user.owner_property.property_name,
+            'community_name': community_name,
         }
     else:
         data['property'] = None
@@ -101,6 +107,7 @@ def user_update_profile(request):
     try:
         user = UserInfo.objects.select_related(
             'owner_property__points_threshold',
+            'owner_community__property',
             'property_profile'  # 预加载物业档案（如果是物业身份）
         ).get(openid=openid)
     except UserInfo.DoesNotExist:
@@ -168,7 +175,26 @@ def user_update_profile(request):
         if requested_identity == 'OWNER':
             user.active_identity = 'OWNER'
     
-    # 物业绑定处理：所有身份只能在第一次绑定物业，之后不能修改
+    # 小区绑定处理：所有身份只能在第一次绑定小区，之后不能修改（业主选小区后可反推所属物业）
+    if 'owner_community_id' in body:
+        community_id = body.get('owner_community_id')
+        community_id = str(community_id).strip() if community_id is not None else ''
+
+        # 允许缺省：不绑定也不解绑
+        if community_id:
+            if getattr(user, 'owner_community', None):
+                return json_err('您已绑定小区，不能再次修改', status=400)
+
+            try:
+                community = Community.objects.select_related('property').get(community_id=community_id)
+            except Community.DoesNotExist:
+                return json_err('小区不存在', status=404)
+
+            user.owner_community = community
+            # 绑定小区后自动反推所属物业
+            user.owner_property = community.property
+
+    # 物业绑定处理：兼容旧逻辑（历史客户端仍可能提交 owner_property_id）
     if 'owner_property_id' in body:
         property_id = body.get('owner_property_id')
         property_id = str(property_id).strip() if property_id is not None else ''
@@ -231,10 +257,15 @@ def user_update_profile(request):
             property_profile = user.owner_property
             threshold = getattr(property_profile, 'points_threshold', None)
             min_points = threshold.min_points if threshold else 0
+            community_name = ''
+            if getattr(user, 'owner_community', None):
+                community_name = user.owner_community.community_name or ''
+            else:
+                community_name = property_profile.community_name or ''
             property_data = {
                 'property_id': property_profile.property_id,
                 'property_name': property_profile.property_name,
-                'community_name': property_profile.community_name,
+                'community_name': community_name,
                 'min_points': min_points,
             }
         
@@ -393,7 +424,7 @@ def user_profile(request):
     """
     openid = get_openid(request)
     try:
-        user = UserInfo.objects.select_related('owner_property__points_threshold').prefetch_related('assigned_identities').get(openid=openid)
+        user = UserInfo.objects.select_related('owner_property__points_threshold', 'owner_community__property').prefetch_related('assigned_identities').get(openid=openid)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
 
@@ -422,11 +453,16 @@ def user_profile(request):
         property_profile = user.owner_property
         threshold = getattr(property_profile, 'points_threshold', None)
         min_points = threshold.min_points if threshold else 0
+        community_name = ''
+        if getattr(user, 'owner_community', None):
+            community_name = user.owner_community.community_name or ''
+        else:
+            community_name = property_profile.community_name or ''
         
         property_data = {
             'property_id': property_profile.property_id,
             'property_name': property_profile.property_name,
-            'community_name': property_profile.community_name,
+            'community_name': community_name,
             'min_points': min_points,  # 积分阈值
         }
     elif user.identity_type == 'PROPERTY':

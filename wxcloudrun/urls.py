@@ -22,6 +22,7 @@ from wxcloudrun.views import (
     user_set_active_identity,
     identity_apply,
     properties_public_list,
+    communities_public_list,
     categories_list,
     merchants_list,
     merchant_detail,
@@ -51,6 +52,7 @@ urlpatterns = (
     url(r'^api/user/identity/active/?$', user_set_active_identity),  # PUT 切换活跃身份
     url(r'^api/user/identity/apply/?$', identity_apply),             # POST 申请商户/物业身份
     url(r'^api/properties/public/?$', properties_public_list),       # GET 获取物业列表（供业主选择）
+    url(r'^api/communities/public/?$', communities_public_list),     # GET 获取小区列表（供业主选择）
     
     # 商品分类
     url(r'^api/categories/?$', categories_list),
@@ -99,6 +101,10 @@ urlpatterns = (
     # 管理员-物业管理 CRUD（使用 openid，包含积分阈值）
     url(r'^api/admin/properties/?$', views.admin_properties),                  # GET（只读，通过用户列表创建）
     url(r'^api/admin/properties/(?P<openid>[^/]+)/?$', views.admin_properties_detail), # PUT/DELETE
+
+    # 管理员-小区管理 CRUD（使用 community_id）
+    url(r'^api/admin/communities/?$', views.admin_communities),               # GET/POST
+    url(r'^api/admin/communities/(?P<community_id>[^/]+)/?$', views.admin_communities_detail),  # PUT/DELETE
 
     # 管理员-用户管理 CRUD
     url(r'^api/admin/users/?$', views.admin_users),                            # GET/POST
