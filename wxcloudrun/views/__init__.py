@@ -9,6 +9,7 @@ from wxcloudrun.views.miniapp import (
     properties_public_list,
     communities_public_list,
     contact_info,
+    feedback_handler,
     categories_list,
     merchants_list,
     merchant_detail,
@@ -55,5 +56,6 @@ from wxcloudrun.views.admin import (
     admin_identity_revoke,
     admin_identity_active_set,
     admin_contact_info,
+    admin_feedbacks,
 )
 

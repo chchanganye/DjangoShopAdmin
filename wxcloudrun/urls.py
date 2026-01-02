@@ -38,6 +38,7 @@ from wxcloudrun.views import (
     contract_signature_status,
     contract_signature_update,
     contact_info,
+    feedback_handler,
 )
 from wxcloudrun import views  # 管理员视图
 from django.urls import re_path as url
@@ -84,6 +85,8 @@ urlpatterns = (
     url(r'^api/contract/signature/?$', contract_signature_update),
     # 联系我们
     url(r'^api/contact/?$', contact_info),
+    # 意见反馈（提交/记录）
+    url(r'^api/feedback/?$', feedback_handler),
 
     # ========== 管理员端接口 ==========
     
@@ -140,4 +143,6 @@ urlpatterns = (
     url(r'^api/admin/contract/signature/?$', views.admin_contract_signature),       # GET
     # 管理员-联系我们配置
     url(r'^api/admin/contact/?$', views.admin_contact_info),                        # GET/PUT
+    # 管理员-意见反馈
+    url(r'^api/admin/feedbacks/?$', views.admin_feedbacks),                         # GET
 )

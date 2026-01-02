@@ -329,6 +329,30 @@ class ContactSetting(models.Model):
         return obj
 
 
+class UserFeedback(models.Model):
+    """用户意见反馈"""
+
+    user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='feedbacks')
+    content = models.TextField('反馈内容', default='')
+    images = models.JSONField('图片', default=list, blank=True)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'UserFeedback'
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = '意见反馈'
+        verbose_name_plural = '意见反馈'
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
 
 # 协议合同配置（全局单条）
 class ContractSetting(models.Model):
