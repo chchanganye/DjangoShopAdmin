@@ -2,6 +2,7 @@
 import json
 import logging
 from django.views.decorators.http import require_http_methods
+from django.db.models import Q
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
@@ -26,6 +27,7 @@ def admin_users(request, admin):
     if request.method == 'GET':
         current_param = request.GET.get('current') or request.GET.get('page')
         size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
+        keyword = (request.GET.get('keyword') or request.GET.get('q') or '').strip()
 
         page = 1
         page_size = 20
@@ -48,6 +50,11 @@ def admin_users(request, admin):
             page_size = 100
 
         qs = UserInfo.objects.select_related('owner_property').all().order_by('-updated_at', '-id')
+        if keyword:
+            qs = qs.filter(
+                Q(phone_number__icontains=keyword)
+                | Q(nickname__icontains=keyword)
+            )
         total = qs.count()
         start = (page - 1) * page_size
         users = list(qs[start : start + page_size])

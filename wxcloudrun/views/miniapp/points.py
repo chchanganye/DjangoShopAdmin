@@ -148,7 +148,7 @@ def merchant_points_add(request):
 
     target_user = UserInfo.objects.select_related('owner_property__user').filter(phone_number=phone_number).order_by('-id').first()
     if not target_user:
-        return json_err('用户不存在', status=404)
+        return json_err('找不到该手机号用户', status=404)
 
     share_setting = get_points_share_setting()
     owner_rate = share_setting.merchant_rate
