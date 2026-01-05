@@ -10,6 +10,7 @@ from wxcloudrun.views.miniapp.community import communities_public_list
 from wxcloudrun.views.miniapp.category import categories_list
 from wxcloudrun.views.miniapp.merchant import (
     merchants_list,
+    merchants_recommended,
     merchant_detail,
     merchant_update_banner,
     merchant_business_license,
@@ -32,6 +33,7 @@ __all__ = [
     'communities_public_list',
     'categories_list',
     'merchants_list',
+    'merchants_recommended',
     'merchant_detail',
     'merchant_update_banner',
     'merchant_business_license',

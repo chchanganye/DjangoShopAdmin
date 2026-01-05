@@ -207,6 +207,36 @@ class MerchantProfile(models.Model):
         super().save(*args, **kwargs)
 
 
+class RecommendedMerchant(models.Model):
+    """首页推荐商户（用于小程序“推荐”分类展示）"""
+
+    merchant = models.OneToOneField(
+        MerchantProfile,
+        verbose_name='商户',
+        on_delete=models.CASCADE,
+        related_name='recommended_entry',
+    )
+    sort_order = models.PositiveIntegerField('排序', default=1)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'RecommendedMerchant'
+        indexes = [
+            models.Index(fields=['sort_order'], name='RecommendedMerchant_sort_order_idx'),
+        ]
+        verbose_name = '推荐商户'
+        verbose_name_plural = '推荐商户'
+
+    def __str__(self):
+        return f"{self.merchant.merchant_name}({self.sort_order})"
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
 # 积分阈值配置
 class PointsThreshold(models.Model):
     property = models.OneToOneField(PropertyProfile, verbose_name='物业', on_delete=models.CASCADE, related_name='points_threshold')

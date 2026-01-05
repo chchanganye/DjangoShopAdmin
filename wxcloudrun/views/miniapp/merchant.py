@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import MerchantProfile, UserInfo
+from wxcloudrun.models import MerchantProfile, UserInfo, RecommendedMerchant
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 from wxcloudrun.exceptions import WxOpenApiError
 
@@ -174,6 +174,92 @@ def merchants_list(request):
         })
     except Exception as exc:
         logger.error(f'查询商户列表失败: {str(exc)}', exc_info=True)
+        return json_err(f'查询失败: {str(exc)}', status=500)
+
+
+@openid_required
+@require_http_methods(["GET"])
+def merchants_recommended(request):
+    """获取首页推荐商户（最多 4 个，按后台配置顺序返回）"""
+    limit_param = request.GET.get('limit')
+    page_size = 4
+    if limit_param:
+        try:
+            page_size = int(limit_param)
+        except (TypeError, ValueError):
+            return json_err('limit 必须为数字', status=400)
+    if page_size < 1:
+        page_size = 1
+    if page_size > 4:
+        page_size = 4
+
+    qs = (
+        RecommendedMerchant.objects.select_related('merchant__user', 'merchant__category')
+        .all()
+        .order_by('sort_order', 'id')
+    )
+    entries = list(qs[:page_size])
+    merchants = [entry.merchant for entry in entries if entry.merchant]
+
+    try:
+        all_file_ids = [m.banner_url for m in merchants if m.banner_url and m.banner_url.startswith('cloud://')]
+        temp_urls = _collect_temp_urls(all_file_ids)
+
+        items = []
+        for m in merchants:
+            banner_url = _resolve_file_id(m.banner_url, temp_urls)
+            items.append({
+                'merchant_id': m.merchant_id,
+                'merchant_name': m.merchant_name,
+                'title': m.title,
+                'description': m.description,
+                'banner_url': banner_url,
+                'category': m.category.name if m.category else None,
+                'category_id': m.category.id if m.category else None,
+                'contact_phone': m.contact_phone,
+                'address': m.address,
+                'latitude': float(m.latitude) if m.latitude is not None else None,
+                'longitude': float(m.longitude) if m.longitude is not None else None,
+                'positive_rating_percent': m.positive_rating_percent,
+                'open_hours': m.open_hours,
+                'gallery': m.gallery or [],
+                'rating_count': m.rating_count,
+                'avg_score': float(m.avg_score),
+            })
+        return json_ok({
+            'list': items,
+            'has_more': False,
+            'next_cursor': None,
+        })
+    except WxOpenApiError as exc:
+        logger.warning(f"获取推荐商户横幅图临时URL失败: {exc}")
+        items = []
+        for m in merchants:
+            items.append({
+                'merchant_id': m.merchant_id,
+                'merchant_name': m.merchant_name,
+                'title': m.title,
+                'description': m.description,
+                'banner_url': '',
+                'category': m.category.name if m.category else None,
+                'category_id': m.category.id if m.category else None,
+                'contact_phone': m.contact_phone,
+                'address': m.address,
+                'latitude': float(m.latitude) if m.latitude is not None else None,
+                'longitude': float(m.longitude) if m.longitude is not None else None,
+                'positive_rating_percent': m.positive_rating_percent,
+                'open_hours': m.open_hours,
+                'gallery': m.gallery or [],
+                'rating_count': m.rating_count,
+                'avg_score': float(m.avg_score),
+            })
+        return json_ok({
+            'list': items,
+            'has_more': False,
+            'next_cursor': None,
+        })
+    except Exception as exc:
+        logger.error(f'查询推荐商户失败: {str(exc)}', exc_info=True)
         return json_err(f'查询失败: {str(exc)}', status=500)
 
 

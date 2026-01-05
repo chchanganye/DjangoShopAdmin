@@ -25,6 +25,7 @@ from wxcloudrun.views import (
     communities_public_list,
     categories_list,
     merchants_list,
+    merchants_recommended,
     merchant_detail,
     merchant_update_banner,
     merchant_business_license,
@@ -61,6 +62,7 @@ urlpatterns = (
 
     # 商户信息
     url(r'^api/merchants/?$', merchants_list),
+    url(r'^api/merchants/recommended/?$', merchants_recommended),
     url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', merchant_detail),
     url(r'^api/merchant/banner/?$', merchant_update_banner),                  # PUT 商户更新横幅
     url(r'^api/merchant/license/?$', merchant_business_license),              # GET/PUT 商户营业执照
@@ -103,6 +105,9 @@ urlpatterns = (
     # 管理员-商户管理 CRUD（使用 openid）
     url(r'^api/admin/merchants/?$', views.admin_merchants),                    # GET（只读，通过用户列表创建）
     url(r'^api/admin/merchants/(?P<openid>[^/]+)/?$', views.admin_merchants_detail),   # PUT/DELETE
+
+    # 管理员-推荐商户配置（最多4个）
+    url(r'^api/admin/recommended-merchants/?$', views.admin_recommended_merchants),   # GET/PUT
 
     # 管理员-物业管理 CRUD（使用 openid，包含积分阈值）
     url(r'^api/admin/properties/?$', views.admin_properties),                  # GET（只读，通过用户列表创建）

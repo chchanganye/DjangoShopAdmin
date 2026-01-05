@@ -12,6 +12,7 @@ from wxcloudrun.views.miniapp import (
     feedback_handler,
     categories_list,
     merchants_list,
+    merchants_recommended,
     merchant_detail,
     merchant_update_banner,
     merchant_business_license,
@@ -58,5 +59,6 @@ from wxcloudrun.views.admin import (
     admin_identity_active_set,
     admin_contact_info,
     admin_feedbacks,
+    admin_recommended_merchants,
 )
 
