@@ -34,6 +34,7 @@ from wxcloudrun.views import (
     threshold_query,
     points_change,
     merchant_points_add,
+    owner_property_fee_pay,
     contract_image,
     contract_signature_status,
     contract_signature_update,
@@ -78,6 +79,8 @@ urlpatterns = (
     url(r'^api/points/change/?$', points_change),
     # 商户为用户增加积分（手机号+金额）
     url(r'^api/points/merchant/add/?$', merchant_points_add),
+    # 业主使用积分抵扣物业费（积分转给物业）
+    url(r'^api/points/property/pay/?$', owner_property_fee_pay),
     # 协议合同图片
     url(r'^api/contract/image/?$', contract_image),
     # 合同签名（状态与提交）

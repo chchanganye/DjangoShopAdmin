@@ -16,6 +16,81 @@ logger = logging.getLogger('log')
 
 
 @openid_required
+@require_http_methods(["POST"])
+def owner_property_fee_pay(request):
+    """业主使用积分抵扣物业费：业主扣积分，物业加积分"""
+    openid = get_openid(request)
+    if not openid:
+        return json_err('缺少openid', status=401)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    points = body.get('points')
+    if points is None:
+        return json_err('缺少参数 points', status=400)
+
+    try:
+        points_int = int(points)
+    except (TypeError, ValueError):
+        return json_err('points 必须是整数', status=400)
+
+    if points_int <= 0:
+        return json_err('points 必须为正整数', status=400)
+
+    try:
+        owner_user = UserInfo.objects.select_related(
+            'owner_community__property__user',
+            'owner_property__user',
+        ).get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if owner_user.active_identity != 'OWNER':
+        return json_err('仅业主身份可操作', status=403)
+
+    property_profile = None
+    if getattr(owner_user, 'owner_community', None) and owner_user.owner_community:
+        property_profile = owner_user.owner_community.property
+    elif getattr(owner_user, 'owner_property', None) and owner_user.owner_property:
+        property_profile = owner_user.owner_property
+
+    if not property_profile:
+        return json_err('请先绑定小区', status=400)
+
+    property_user = getattr(property_profile, 'user', None)
+    if not property_user:
+        return json_err('未找到对应物业账号', status=404)
+
+    with transaction.atomic():
+        owner_locked = UserInfo.objects.select_for_update().get(pk=owner_user.pk)
+        if owner_locked.total_points < points_int:
+            return json_err('积分余额不足', status=400)
+
+        property_locked = UserInfo.objects.select_for_update().get(pk=property_user.pk)
+
+        owner_locked = change_user_points(owner_locked, -points_int)
+        property_locked = change_user_points(property_locked, points_int)
+
+    return json_ok({
+        'points': points_int,
+        'owner': {
+            'system_id': owner_locked.system_id,
+            'daily_points': owner_locked.daily_points,
+            'total_points': owner_locked.total_points,
+        },
+        'property': {
+            'property_id': property_profile.property_id,
+            'property_name': property_profile.property_name,
+            'daily_points': property_locked.daily_points,
+            'total_points': property_locked.total_points,
+        },
+    })
+
+
+@openid_required
 @require_http_methods(["GET"])
 def threshold_query(request, openid):
     """查询物业积分阈值（小程序端，使用 openid）"""

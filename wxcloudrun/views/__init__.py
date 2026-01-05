@@ -21,6 +21,7 @@ from wxcloudrun.views.miniapp import (
     threshold_query,
     points_change,
     merchant_points_add,
+    owner_property_fee_pay,
     contract_image,
     contract_signature_status,
     contract_signature_update,
