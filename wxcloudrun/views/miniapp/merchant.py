@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import MerchantProfile, UserInfo, RecommendedMerchant
+from wxcloudrun.models import MerchantProfile, UserInfo, RecommendedMerchant, Category
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 from wxcloudrun.exceptions import WxOpenApiError
 
@@ -261,6 +261,66 @@ def merchants_recommended(request):
     except Exception as exc:
         logger.error(f'查询推荐商户失败: {str(exc)}', exc_info=True)
         return json_err(f'查询失败: {str(exc)}', status=500)
+
+
+@openid_required
+@require_http_methods(["PUT"])
+def merchant_update_profile(request):
+    """商户编辑自己的档案（名称/简介/分类/电话/地址/营业时间）"""
+    openid = get_openid(request)
+    try:
+        user = UserInfo.objects.select_related('merchant_profile', 'merchant_profile__category').get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if user.active_identity != 'MERCHANT':
+        return json_err('仅商户身份可编辑资料', status=403)
+
+    try:
+        merchant = user.merchant_profile
+    except MerchantProfile.DoesNotExist:
+        return json_err('商户档案不存在', status=404)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    if 'merchant_name' in body:
+        merchant.merchant_name = (body.get('merchant_name') or '').strip()
+    if 'title' in body:
+        merchant.title = (body.get('title') or '').strip()
+    if 'description' in body:
+        merchant.description = (body.get('description') or '').strip()
+    if 'contact_phone' in body:
+        merchant.contact_phone = (body.get('contact_phone') or '').strip()
+    if 'address' in body:
+        merchant.address = (body.get('address') or '').strip()
+    if 'open_hours' in body:
+        merchant.open_hours = (body.get('open_hours') or '').strip()
+    if 'category_id' in body:
+        category_id = body.get('category_id')
+        if category_id:
+            try:
+                merchant.category = Category.objects.get(id=category_id)
+            except Category.DoesNotExist:
+                return json_err('分类不存在', status=404)
+        else:
+            merchant.category = None
+
+    merchant.save()
+
+    return json_ok({
+        'merchant_id': merchant.merchant_id,
+        'merchant_name': merchant.merchant_name,
+        'title': merchant.title,
+        'description': merchant.description,
+        'category_id': merchant.category.id if merchant.category else None,
+        'category_name': merchant.category.name if merchant.category else None,
+        'contact_phone': merchant.contact_phone,
+        'address': merchant.address,
+        'open_hours': merchant.open_hours,
+    })
 
 
 @openid_required

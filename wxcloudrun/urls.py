@@ -30,8 +30,10 @@ from wxcloudrun.views import (
     merchant_update_banner,
     merchant_business_license,
     merchant_update_location,
+    merchant_update_profile,
     properties_list,
     owners_by_property,
+    property_update_profile,
     threshold_query,
     points_change,
     merchant_points_add,
@@ -67,9 +69,11 @@ urlpatterns = (
     url(r'^api/merchant/banner/?$', merchant_update_banner),                  # PUT 商户更新横幅
     url(r'^api/merchant/license/?$', merchant_business_license),              # GET/PUT 商户营业执照
     url(r'^api/merchant/location/?$', merchant_update_location),              # PUT 商户更新定位
+    url(r'^api/merchant/profile/?$', merchant_update_profile),                # PUT 商户编辑资料
 
     # 物业信息
     url(r'^api/properties/?$', properties_list),
+    url(r'^api/property/profile/?$', property_update_profile),                # PUT 物业编辑资料
 
     # 业主信息（按物业ID）
     url(r'^api/owners/by_property/(?P<property_id>[^/]+)/?$', owners_by_property),

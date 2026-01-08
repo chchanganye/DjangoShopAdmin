@@ -7,6 +7,7 @@ from django.utils.dateparse import parse_datetime
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.models import PropertyProfile, UserInfo
+import json
 
 
 @openid_required
@@ -121,3 +122,39 @@ def owners_by_property(request, property_id):
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
 
+
+@openid_required
+@require_http_methods(["PUT"])
+def property_update_profile(request):
+    """物业编辑自己的档案（名称/社区名）"""
+    openid = request.META.get('HTTP_X_WX_OPENID') or request.META.get('HTTP_X_OPENID') or ''
+    try:
+        user = UserInfo.objects.select_related('property_profile').get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if user.active_identity != 'PROPERTY':
+        return json_err('仅物业身份可编辑资料', status=403)
+
+    try:
+        prop = user.property_profile
+    except PropertyProfile.DoesNotExist:
+        return json_err('物业档案不存在', status=404)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    if 'property_name' in body:
+        prop.property_name = (body.get('property_name') or '').strip()
+    if 'community_name' in body:
+        prop.community_name = (body.get('community_name') or '').strip()
+
+    prop.save()
+
+    return json_ok({
+        'property_id': prop.property_id,
+        'property_name': prop.property_name,
+        'community_name': prop.community_name,
+    })
