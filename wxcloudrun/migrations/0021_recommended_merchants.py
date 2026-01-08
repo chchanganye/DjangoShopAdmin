@@ -18,8 +18,15 @@ def ensure_recommended_merchant_schema(apps, schema_editor):
     existing_tables = {t.lower() for t in connection.introspection.table_names()}
     table_name = RecommendedMerchant._meta.db_table
 
+    table_created = False
     if table_name.lower() not in existing_tables:
+        # create_model 会在 schema_editor 退出时创建索引（deferred_sql），
+        # 这里不要再手动 add_index，否则可能触发 Duplicate key name。
         schema_editor.create_model(RecommendedMerchant)
+        table_created = True
+
+    if table_created:
+        return
 
     with connection.cursor() as cursor:
         constraints = connection.introspection.get_constraints(cursor, table_name)
