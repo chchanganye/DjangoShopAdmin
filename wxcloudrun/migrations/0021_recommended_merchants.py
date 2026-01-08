@@ -59,11 +59,10 @@ class Migration(migrations.Migration):
                 ),
                 migrations.AddIndex(
                     model_name='recommendedmerchant',
-                    index=models.Index(fields=['sort_order'], name='RecommendedMerchant_sort_order_idx'),
+                    index=models.Index(fields=['sort_order'], name='RecommendedMerchant_sort_idx'),
                 ),
             ],
             database_operations=[],
         ),
         migrations.RunPython(ensure_recommended_merchant_schema, migrations.RunPython.noop),
     ]
-

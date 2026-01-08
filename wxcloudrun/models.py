@@ -224,7 +224,7 @@ class RecommendedMerchant(models.Model):
     class Meta:
         db_table = 'RecommendedMerchant'
         indexes = [
-            models.Index(fields=['sort_order'], name='RecommendedMerchant_sort_order_idx'),
+            models.Index(fields=['sort_order'], name='RecommendedMerchant_sort_idx'),
         ]
         verbose_name = '推荐商户'
         verbose_name_plural = '推荐商户'
