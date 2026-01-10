@@ -1,13 +1,13 @@
 """用户业务逻辑服务"""
 from datetime import date
-from wxcloudrun.models import UserInfo
+from wxcloudrun.models import UserPointsAccount
 
 
-def ensure_daily_reset(user: UserInfo):
-    """确保每日积分重置"""
+def ensure_daily_reset(account: UserPointsAccount):
+    """确保每日积分重置（按身份积分账户）"""
     today = date.today()
-    if user.daily_points_date != today:
-        user.daily_points = 0
-        user.daily_points_date = today
-        user.save()
+    if account.daily_points_date != today:
+        account.daily_points = 0
+        account.daily_points_date = today
+        account.save()
 

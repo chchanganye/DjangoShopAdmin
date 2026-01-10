@@ -11,6 +11,7 @@ from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
 from wxcloudrun.models import UserInfo, PropertyProfile, Community, IdentityApplication, AccessLog, MerchantProfile
+from wxcloudrun.services.points_service import get_points_account
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files, get_phone_number_by_code
 from wxcloudrun.exceptions import WxOpenApiError
 
@@ -268,7 +269,7 @@ def user_update_profile(request):
                 'community_name': community_name,
                 'min_points': min_points,
             }
-        
+        points_account = get_points_account(user, user.active_identity)
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
@@ -276,8 +277,8 @@ def user_update_profile(request):
             'identity_type': user.active_identity,
             'avatar': avatar_data,
             'phone_number': user.phone_number,
-            'daily_points': user.daily_points,
-            'total_points': user.total_points,
+            'daily_points': points_account.daily_points,
+            'total_points': points_account.total_points,
             'min_points': min_points,
             'property': property_data,
         })
@@ -482,6 +483,7 @@ def user_profile(request):
     is_merchant = MerchantProfile.objects.filter(user=user).exists()
     is_property = PropertyProfile.objects.filter(user=user).exists()
     assigned_identities = list(user.assigned_identities.values_list('identity_type', flat=True))
+    points_account = get_points_account(user, user.active_identity)
     data = {
         'system_id': user.system_id,
         'openid': user.openid,
@@ -493,8 +495,8 @@ def user_profile(request):
         'is_property': is_property,
         'avatar': avatar_data,  # 返回 {file_id, url} 或 null
         'phone_number': user.phone_number,
-        'daily_points': user.daily_points,      # 当日积分
-        'total_points': user.total_points,      # 累计积分
+        'daily_points': points_account.daily_points,      # 当日积分（按 active_identity）
+        'total_points': points_account.total_points,      # 累计积分（按 active_identity）
         'min_points': min_points,               # 积分阈值（用户关联了物业时返回所在物业的积分阈值，否则为0）
         'property': property_data,              # 物业信息（用户关联了物业时有值，否则为null）
     }

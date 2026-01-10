@@ -34,6 +34,13 @@ IDENTITY_CHOICES = (
 )
 
 
+POINTS_IDENTITY_CHOICES = (
+    ('OWNER', 'OWNER'),
+    ('PROPERTY', 'PROPERTY'),
+    ('MERCHANT', 'MERCHANT'),
+)
+
+
 def _generate_seq(prefix: str, model_cls, field_name: str, width: int = 3):
     """
     Generate a unique sequential ID with given prefix and zero-padded width.
@@ -107,6 +114,40 @@ class UserInfo(models.Model):
 
 
 # 物业档案（身份为物业）
+class UserPointsAccount(models.Model):
+    """用户按身份的独立积分账户（OWNER/MERCHANT/PROPERTY 互不影响）"""
+
+    user = models.ForeignKey(
+        UserInfo,
+        verbose_name='关联用户',
+        on_delete=models.CASCADE,
+        related_name='points_accounts',
+    )
+    identity_type = models.CharField('积分身份', max_length=20, choices=POINTS_IDENTITY_CHOICES)
+
+    daily_points = models.IntegerField('当日积分', default=0)
+    total_points = models.IntegerField('累计积分', default=0)
+    daily_points_date = models.DateField('当日积分日期', null=True, blank=True)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'UserPointsAccount'
+        unique_together = ('user', 'identity_type')
+        indexes = [
+            models.Index(fields=['user', 'identity_type']),
+        ]
+        verbose_name = '用户积分账户'
+        verbose_name_plural = '用户积分账户'
+
+    def save(self, *args, **kwargs):
+        if self.daily_points_date is None:
+            self.daily_points_date = date.today()
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
 class PropertyProfile(models.Model):
     user = models.OneToOneField(UserInfo, verbose_name='关联用户', on_delete=models.CASCADE, related_name='property_profile')
     property_id = models.CharField('物业ID', max_length=32, unique=True)
@@ -258,13 +299,17 @@ class PointsThreshold(models.Model):
 # 积分记录（用于统计）
 class PointsRecord(models.Model):
     user = models.ForeignKey(UserInfo, verbose_name='用户', on_delete=models.CASCADE, related_name='points_records')
+    identity_type = models.CharField('积分身份', max_length=20, choices=POINTS_IDENTITY_CHOICES, default='OWNER')
     change = models.IntegerField('积分变动值')  # 正负积分变动
+    daily_points = models.IntegerField('当日积分', default=0)
+    total_points = models.IntegerField('累计积分', default=0)
     created_at = models.DateTimeField('创建时间', default=datetime.now)
 
     class Meta:
         db_table = 'PointsRecord'
         indexes = [
             models.Index(fields=['user']),
+            models.Index(fields=['user', 'identity_type']),
         ]
         verbose_name = '积分记录'
         verbose_name_plural = '积分记录'

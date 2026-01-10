@@ -64,6 +64,7 @@ def admin_points_records(request, admin):
     openid = request.GET.get('openid')
     if not openid:
         return json_err('缺少参数 openid', status=400)
+    identity_type = (request.GET.get('identity_type') or '').strip().upper()
     try:
         user = UserInfo.objects.get(openid=openid)
     except UserInfo.DoesNotExist:
@@ -103,6 +104,8 @@ def admin_points_records(request, admin):
         if not cursor_filter:
             return json_err('cursor 无效', status=400)
     qs = PointsRecord.objects.filter(user=user).order_by('-created_at', '-id')
+    if identity_type in {'OWNER', 'MERCHANT', 'PROPERTY'}:
+        qs = qs.filter(identity_type=identity_type)
     if cursor_filter:
         cursor_dt, cursor_pk = cursor_filter
         qs = qs.filter(Q(created_at__lt=cursor_dt) | Q(created_at=cursor_dt, id__lt=cursor_pk))
@@ -115,7 +118,11 @@ def admin_points_records(request, admin):
             'id': record.id,
             'openid': user.openid,
             'system_id': user.system_id,
+            'identity_type': getattr(record, 'identity_type', None),
+            'delta': record.change,
             'change': record.change,
+            'daily_points': getattr(record, 'daily_points', 0),
+            'total_points': getattr(record, 'total_points', 0),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
     next_cursor = f"{sliced[-1].created_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None

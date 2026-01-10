@@ -6,6 +6,7 @@ from django.views.decorators.http import require_http_methods
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.models import UserInfo, PropertyProfile, PointsThreshold
+from wxcloudrun.services.points_service import get_points_account
 
 
 logger = logging.getLogger('log')
@@ -51,8 +52,8 @@ def admin_properties(request, admin):
             'property_id': p.property_id,
             'property_name': p.property_name,
             'community_name': p.community_name,
-            'daily_points': p.user.daily_points if p.user else 0,
-            'total_points': p.user.total_points if p.user else 0,
+            'daily_points': get_points_account(p.user, 'PROPERTY').daily_points if p.user else 0,
+            'total_points': get_points_account(p.user, 'PROPERTY').total_points if p.user else 0,
             'min_points': min_points,
         })
     return json_ok({'list': items, 'total': total})
@@ -114,8 +115,8 @@ def admin_properties_detail(request, admin, openid):
         'property_id': property_profile.property_id,
         'property_name': property_profile.property_name,
         'community_name': property_profile.community_name,
-        'daily_points': property_profile.user.daily_points,
-        'total_points': property_profile.user.total_points,
+        'daily_points': get_points_account(property_profile.user, 'PROPERTY').daily_points,
+        'total_points': get_points_account(property_profile.user, 'PROPERTY').total_points,
         'min_points': min_points_value,
     })
 

@@ -9,7 +9,11 @@ from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
 from wxcloudrun.models import UserInfo, PropertyProfile, MerchantProfile, PointsThreshold
-from wxcloudrun.services.points_service import change_user_points, get_points_share_setting
+from wxcloudrun.services.points_service import (
+    change_points_account,
+    get_points_account_for_update,
+    get_points_share_setting,
+)
 
 
 logger = logging.getLogger('log')
@@ -65,27 +69,35 @@ def owner_property_fee_pay(request):
         return json_err('未找到对应物业账号', status=404)
 
     with transaction.atomic():
-        owner_locked = UserInfo.objects.select_for_update().get(pk=owner_user.pk)
-        if owner_locked.total_points < points_int:
+        lock_pairs = sorted(
+            [(owner_user, 'OWNER'), (property_user, 'PROPERTY')],
+            key=lambda pair: (pair[0].id, pair[1]),
+        )
+        locked_accounts = {}
+        for lock_user, lock_identity in lock_pairs:
+            locked_accounts[(lock_user.id, lock_identity)] = get_points_account_for_update(lock_user, lock_identity)
+
+        owner_account = locked_accounts[(owner_user.id, 'OWNER')]
+        property_account = locked_accounts[(property_user.id, 'PROPERTY')]
+
+        if owner_account.total_points < points_int:
             return json_err('积分余额不足', status=400)
 
-        property_locked = UserInfo.objects.select_for_update().get(pk=property_user.pk)
-
-        owner_locked = change_user_points(owner_locked, -points_int)
-        property_locked = change_user_points(property_locked, points_int)
+        owner_account = change_points_account(owner_account, -points_int)
+        property_account = change_points_account(property_account, points_int)
 
     return json_ok({
         'points': points_int,
         'owner': {
-            'system_id': owner_locked.system_id,
-            'daily_points': owner_locked.daily_points,
-            'total_points': owner_locked.total_points,
+            'system_id': owner_user.system_id,
+            'daily_points': owner_account.daily_points,
+            'total_points': owner_account.total_points,
         },
         'property': {
             'property_id': property_profile.property_id,
             'property_name': property_profile.property_name,
-            'daily_points': property_locked.daily_points,
-            'total_points': property_locked.total_points,
+            'daily_points': property_account.daily_points,
+            'total_points': property_account.total_points,
         },
     })
 
@@ -144,7 +156,7 @@ def points_change(request):
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
 
-    if owner_user.identity_type != 'OWNER':
+    if owner_user.active_identity != 'OWNER':
         return json_err('仅业主可发起积分变更', status=403)
 
     try:
@@ -160,15 +172,26 @@ def points_change(request):
     property_points = 0
 
     with transaction.atomic():
-        owner_user = change_user_points(owner_user, delta)
+        lock_pairs = sorted(
+            [(owner_user, 'OWNER'), (merchant_user, 'MERCHANT')],
+            key=lambda pair: (pair[0].id, pair[1]),
+        )
+        locked_accounts = {}
+        for lock_user, lock_identity in lock_pairs:
+            locked_accounts[(lock_user.id, lock_identity)] = get_points_account_for_update(lock_user, lock_identity)
+
+        owner_account = locked_accounts[(owner_user.id, 'OWNER')]
+        merchant_account = locked_accounts[(merchant_user.id, 'MERCHANT')]
+
+        owner_account = change_points_account(owner_account, delta)
         if merchant_points > 0:
-            change_user_points(merchant_user, merchant_points)
+            merchant_account = change_points_account(merchant_account, merchant_points)
 
     return json_ok({
         'owner': {
             'system_id': owner_user.system_id,
-            'daily_points': owner_user.daily_points,
-            'total_points': owner_user.total_points,
+            'daily_points': owner_account.daily_points,
+            'total_points': owner_account.total_points,
         },
         'merchant': {
             'merchant_id': merchant.merchant_id,
@@ -231,24 +254,35 @@ def merchant_points_add(request):
     merchant_points = delta
 
     with transaction.atomic():
+        lock_pairs = sorted(
+            [(merchant_user, 'MERCHANT'), (target_user, 'OWNER')],
+            key=lambda pair: (pair[0].id, pair[1]),
+        )
+        locked_accounts = {}
+        for lock_user, lock_identity in lock_pairs:
+            locked_accounts[(lock_user.id, lock_identity)] = get_points_account_for_update(lock_user, lock_identity)
+
+        merchant_account = locked_accounts[(merchant_user.id, 'MERCHANT')]
+        owner_account = locked_accounts[(target_user.id, 'OWNER')]
+
         if merchant_points > 0:
-            merchant_user = change_user_points(merchant_user, merchant_points)
+            merchant_account = change_points_account(merchant_account, merchant_points)
         if owner_points > 0:
-            target_user = change_user_points(target_user, owner_points)
+            owner_account = change_points_account(owner_account, owner_points)
 
     return json_ok({
         'target_user': {
             'system_id': target_user.system_id,
             'phone_number': target_user.phone_number,
-            'daily_points': target_user.daily_points,
-            'total_points': target_user.total_points,
+            'daily_points': owner_account.daily_points,
+            'total_points': owner_account.total_points,
             'points_added': owner_points,
         },
         'merchant': {
             'merchant_id': merchant.merchant_id,
             'points_added': merchant_points,
-            'daily_points': merchant_user.daily_points,
-            'total_points': merchant_user.total_points,
+            'daily_points': merchant_account.daily_points,
+            'total_points': merchant_account.total_points,
         },
         'share_ratio': {
             'merchant_rate': 100,

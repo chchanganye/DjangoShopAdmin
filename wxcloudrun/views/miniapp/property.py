@@ -7,6 +7,7 @@ from django.utils.dateparse import parse_datetime
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.models import PropertyProfile, UserInfo
+from wxcloudrun.services.points_service import get_points_account
 import json
 
 
@@ -112,12 +113,13 @@ def owners_by_property(request, property_id):
     sliced = owners[:page_size]
     items = []
     for o in sliced:
+        owner_points = get_points_account(o, 'OWNER')
         items.append({
             'system_id': o.system_id,
             'openid': o.openid,
             'phone_number': o.phone_number,
-            'daily_points': o.daily_points,
-            'total_points': o.total_points,
+            'daily_points': owner_points.daily_points,
+            'total_points': owner_points.total_points,
         })
     next_cursor = f"{sliced[-1].updated_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
     return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})

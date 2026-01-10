@@ -8,6 +8,7 @@ from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.exceptions import WxOpenApiError
 from wxcloudrun.models import Category, UserInfo, MerchantProfile
+from wxcloudrun.services.points_service import get_points_account
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 
 
@@ -93,8 +94,8 @@ def admin_merchants(request, admin):
             'gallery': m.gallery or [],
             'rating_count': m.rating_count,
             'avg_score': float(m.avg_score) if m.avg_score is not None else 0,
-            'daily_points': m.user.daily_points if m.user else 0,
-            'total_points': m.user.total_points if m.user else 0,
+            'daily_points': get_points_account(m.user, 'MERCHANT').daily_points if m.user else 0,
+            'total_points': get_points_account(m.user, 'MERCHANT').total_points if m.user else 0,
         })
     return json_ok({'list': items, 'total': total})
 
@@ -277,8 +278,8 @@ def admin_merchants_detail(request, admin, openid):
             'gallery': merchant.gallery or [],
             'rating_count': merchant.rating_count,
             'avg_score': float(merchant.avg_score),
-            'daily_points': merchant.user.daily_points,
-            'total_points': merchant.user.total_points,
+            'daily_points': get_points_account(merchant.user, 'MERCHANT').daily_points,
+            'total_points': get_points_account(merchant.user, 'MERCHANT').total_points,
         })
     except Exception as e:
         logger.error(f'更新商户失败: {str(e)}')

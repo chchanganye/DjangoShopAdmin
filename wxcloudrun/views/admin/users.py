@@ -1,6 +1,7 @@
 """管理员用户管理视图"""
 import json
 import logging
+from datetime import date
 from django.views.decorators.http import require_http_methods
 from django.db.models import Q
 
@@ -14,6 +15,7 @@ from wxcloudrun.models import (
     PropertyProfile,
     PointsThreshold,
 )
+from wxcloudrun.services.points_service import get_points_account
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 
 
@@ -76,6 +78,7 @@ def admin_users(request, admin):
                     }
             is_merchant = MerchantProfile.objects.filter(user=u).exists()
             is_property = PropertyProfile.objects.filter(user=u).exists()
+            points_account = get_points_account(u, u.active_identity)
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
@@ -86,8 +89,8 @@ def admin_users(request, admin):
                 'is_property': is_property,
                 'avatar': avatar_data,
                 'phone_number': u.phone_number,
-                'daily_points': u.daily_points,
-                'total_points': u.total_points,
+                'daily_points': points_account.daily_points,
+                'total_points': points_account.total_points,
                 'owner_property_id': u.owner_property.property_id if u.owner_property else None,
                 'owner_property_name': u.owner_property.property_name if u.owner_property else None,
                 'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S') if u.created_at else None,
@@ -135,6 +138,14 @@ def admin_users(request, admin):
             daily_points=body.get('daily_points', 0),
             total_points=body.get('total_points', 0),
         )
+        points_account = get_points_account(user, identity_type)
+        if 'daily_points' in body:
+            points_account.daily_points = int(body.get('daily_points') or 0)
+            points_account.daily_points_date = date.today()
+        if 'total_points' in body:
+            points_account.total_points = int(body.get('total_points') or 0)
+        if 'daily_points' in body or 'total_points' in body:
+            points_account.save()
         from wxcloudrun.models import UserAssignedIdentity
         try:
             UserAssignedIdentity.objects.get_or_create(user=user, identity_type='OWNER')
@@ -218,8 +229,8 @@ def admin_users(request, admin):
             'active_identity': user.active_identity,
             'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
             'is_property': PropertyProfile.objects.filter(user=user).exists(),
-            'daily_points': user.daily_points,
-            'total_points': user.total_points,
+            'daily_points': points_account.daily_points,
+            'total_points': points_account.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
             'owner_property_name': user.owner_property.property_name if user.owner_property else None,
         }, status=201)
@@ -288,10 +299,16 @@ def admin_users_detail(request, admin, system_id):
                 return json_err('物业不存在', status=404)
         else:
             user.owner_property = None
-    if 'daily_points' in body:
-        user.daily_points = int(body['daily_points'])
-    if 'total_points' in body:
-        user.total_points = int(body['total_points'])
+
+    points_account = None
+    if 'daily_points' in body or 'total_points' in body:
+        points_account = get_points_account(user, user.active_identity)
+        if 'daily_points' in body:
+            points_account.daily_points = int(body['daily_points'])
+            points_account.daily_points_date = date.today()
+        if 'total_points' in body:
+            points_account.total_points = int(body['total_points'])
+        points_account.save()
     
     # 处理身份变更的关联档案同步
     try:
@@ -382,7 +399,9 @@ def admin_users_detail(request, admin, system_id):
                     'file_id': '',
                     'url': user.avatar_url
                 }
-        
+
+        if points_account is None:
+            points_account = get_points_account(user, user.active_identity)
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
@@ -393,8 +412,8 @@ def admin_users_detail(request, admin, system_id):
             'active_identity': user.active_identity,
             'is_merchant': MerchantProfile.objects.filter(user=user).exists(),
             'is_property': PropertyProfile.objects.filter(user=user).exists(),
-            'daily_points': user.daily_points,
-            'total_points': user.total_points,
+            'daily_points': points_account.daily_points,
+            'total_points': points_account.total_points,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
             'owner_property_name': user.owner_property.property_name if user.owner_property else None,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else None,
