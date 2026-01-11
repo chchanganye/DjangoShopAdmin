@@ -83,8 +83,28 @@ def owner_property_fee_pay(request):
         if owner_account.total_points < points_int:
             return json_err('积分余额不足', status=400)
 
-        owner_account = change_points_account(owner_account, -points_int)
-        property_account = change_points_account(property_account, points_int)
+        transfer_meta = {
+            'action': 'owner_property_fee_pay',
+            'points': points_int,
+            'owner_system_id': owner_user.system_id,
+            'owner_openid': owner_user.openid,
+            'property_id': property_profile.property_id,
+            'property_name': property_profile.property_name,
+            'property_system_id': property_user.system_id,
+            'property_openid': property_user.openid,
+        }
+        owner_account = change_points_account(
+            owner_account,
+            -points_int,
+            source_type='PROPERTY_FEE_PAY',
+            source_meta={**transfer_meta, 'direction': 'owner_debit'},
+        )
+        property_account = change_points_account(
+            property_account,
+            points_int,
+            source_type='PROPERTY_FEE_PAY',
+            source_meta={**transfer_meta, 'direction': 'property_credit'},
+        )
 
     return json_ok({
         'points': points_int,
@@ -183,9 +203,27 @@ def points_change(request):
         owner_account = locked_accounts[(owner_user.id, 'OWNER')]
         merchant_account = locked_accounts[(merchant_user.id, 'MERCHANT')]
 
-        owner_account = change_points_account(owner_account, delta)
+        owner_account = change_points_account(
+            owner_account,
+            delta,
+            source_type='OWNER_SETTLEMENT',
+            source_meta={
+                'action': 'points_change',
+                'merchant_id': merchant.merchant_id,
+                'merchant_name': merchant.merchant_name,
+            },
+        )
         if merchant_points > 0:
-            merchant_account = change_points_account(merchant_account, merchant_points)
+            merchant_account = change_points_account(
+                merchant_account,
+                merchant_points,
+                source_type='OWNER_SETTLEMENT',
+                source_meta={
+                    'action': 'points_change',
+                    'merchant_id': merchant.merchant_id,
+                    'merchant_name': merchant.merchant_name,
+                },
+            )
 
     return json_ok({
         'owner': {
@@ -265,10 +303,33 @@ def merchant_points_add(request):
         merchant_account = locked_accounts[(merchant_user.id, 'MERCHANT')]
         owner_account = locked_accounts[(target_user.id, 'OWNER')]
 
+        settlement_meta = {
+            'action': 'merchant_points_add',
+            'merchant_id': merchant.merchant_id,
+            'merchant_name': merchant.merchant_name,
+            'target_system_id': target_user.system_id,
+            'target_openid': target_user.openid,
+            'target_phone_number': target_user.phone_number,
+            'amount': str(amount_decimal),
+            'amount_int': delta,
+            'merchant_rate': 100,
+            'owner_rate': owner_rate,
+        }
+
         if merchant_points > 0:
-            merchant_account = change_points_account(merchant_account, merchant_points)
+            merchant_account = change_points_account(
+                merchant_account,
+                merchant_points,
+                source_type='MERCHANT_SETTLEMENT',
+                source_meta={**settlement_meta, 'direction': 'merchant_credit'},
+            )
         if owner_points > 0:
-            owner_account = change_points_account(owner_account, owner_points)
+            owner_account = change_points_account(
+                owner_account,
+                owner_points,
+                source_type='MERCHANT_SETTLEMENT',
+                source_meta={**settlement_meta, 'direction': 'owner_credit'},
+            )
 
     return json_ok({
         'target_user': {

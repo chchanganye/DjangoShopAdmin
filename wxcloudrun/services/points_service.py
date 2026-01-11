@@ -41,7 +41,13 @@ def get_points_account_for_update(user: UserInfo, identity_type: str) -> UserPoi
     return account
 
 
-def change_points_account(account: UserPointsAccount, delta: int) -> UserPointsAccount:
+def change_points_account(
+    account: UserPointsAccount,
+    delta: int,
+    *,
+    source_type: str = '',
+    source_meta: Optional[dict] = None,
+) -> UserPointsAccount:
     """变更积分账户，并写入积分变更记录。"""
     ensure_daily_reset(account)
     account.daily_points += int(delta)
@@ -53,6 +59,8 @@ def change_points_account(account: UserPointsAccount, delta: int) -> UserPointsA
         change=int(delta),
         daily_points=account.daily_points,
         total_points=account.total_points,
+        source_type=str(source_type or ''),
+        source_meta=source_meta or {},
     )
     return account
 

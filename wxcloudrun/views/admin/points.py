@@ -2,6 +2,7 @@
 import json
 import logging
 from django.views.decorators.http import require_http_methods
+from django.db.models import Q
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
@@ -61,69 +62,118 @@ def admin_share_setting(request, admin):
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_points_records(request, admin):
-    openid = request.GET.get('openid')
-    if not openid:
-        return json_err('缺少参数 openid', status=400)
+    def build_source_text(record: PointsRecord) -> str:
+        source_type = getattr(record, 'source_type', '') or ''
+        meta = getattr(record, 'source_meta', None) or {}
+
+        if source_type == 'PROPERTY_FEE_PAY':
+            property_name = meta.get('property_name') or ''
+            property_id = meta.get('property_id') or ''
+            points = meta.get('points')
+            direction = meta.get('direction') or ''
+            if direction == 'owner_debit':
+                return f'物业费抵扣：向{property_name}({property_id})抵扣 {points} 积分'
+            if direction == 'property_credit':
+                owner_system_id = meta.get('owner_system_id') or ''
+                return f'物业费抵扣：业主{owner_system_id}抵扣转入 {points} 积分'
+            return f'物业费抵扣：{property_name}({property_id}) {points} 积分'
+
+        if source_type == 'MERCHANT_SETTLEMENT':
+            merchant_name = meta.get('merchant_name') or ''
+            merchant_id = meta.get('merchant_id') or ''
+            phone_number = meta.get('target_phone_number') or ''
+            amount = meta.get('amount') or meta.get('amount_int')
+            owner_rate = meta.get('owner_rate')
+            parts = [f'商户结算：{merchant_name}({merchant_id})']
+            if phone_number:
+                parts.append(f'业主手机号 {phone_number}')
+            if amount is not None:
+                parts.append(f'金额 {amount}')
+            if owner_rate is not None:
+                parts.append(f'业主奖励 {owner_rate}%')
+            return '，'.join(parts)
+
+        if source_type == 'OWNER_SETTLEMENT':
+            merchant_name = meta.get('merchant_name') or ''
+            merchant_id = meta.get('merchant_id') or ''
+            if merchant_name or merchant_id:
+                return f'业主结算：来自{merchant_name}({merchant_id})'
+            return '业主结算'
+
+        if source_type == 'ADMIN_ADJUST':
+            operator = meta.get('operator') or {}
+            username = operator.get('username') or ''
+            old_total = meta.get('old_total_points')
+            new_total = meta.get('new_total_points')
+            if old_total is not None and new_total is not None:
+                return f'管理员调整：{username}，累计积分 {old_total} → {new_total}'
+            return f'管理员调整：{username}'
+
+        return source_type or '-'
+
+    current_param = request.GET.get('current') or request.GET.get('page')
+    size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
+    openid = (request.GET.get('openid') or '').strip()
+    system_id = (request.GET.get('system_id') or '').strip()
+    keyword = (request.GET.get('keyword') or '').strip()
     identity_type = (request.GET.get('identity_type') or '').strip().upper()
-    try:
-        user = UserInfo.objects.get(openid=openid)
-    except UserInfo.DoesNotExist:
-        return json_err('用户不存在', status=404)
-    from datetime import datetime
-    from django.db.models import Q
-    from django.utils.dateparse import parse_datetime
-    limit_param = request.GET.get('limit')
+    source_type = (request.GET.get('source_type') or '').strip()
+
+    page = 1
     page_size = 20
-    if limit_param:
+    if current_param:
         try:
-            page_size = int(limit_param)
+            page = int(current_param)
         except (TypeError, ValueError):
-            return json_err('limit 必须为数字', status=400)
+            return json_err('current 必须为数字', status=400)
+    if size_param:
+        try:
+            page_size = int(size_param)
+        except (TypeError, ValueError):
+            return json_err('size 必须为数字', status=400)
+    if page < 1:
+        page = 1
     if page_size < 1:
         page_size = 1
     if page_size > 100:
         page_size = 100
-    cursor_param = (request.GET.get('cursor') or '').strip()
-    cursor_filter = None
-    if cursor_param:
-        parts = cursor_param.split('#', 1)
-        if len(parts) == 2:
-            ts_str, pk_str = parts
-            dt = parse_datetime(ts_str)
-            if not dt:
-                try:
-                    dt = datetime.fromisoformat(ts_str)
-                except ValueError:
-                    dt = None
-            try:
-                pk_val = int(pk_str)
-            except (TypeError, ValueError):
-                pk_val = None
-            if dt and pk_val is not None:
-                cursor_filter = (dt, pk_val)
-        if not cursor_filter:
-            return json_err('cursor 无效', status=400)
-    qs = PointsRecord.objects.filter(user=user).order_by('-created_at', '-id')
+
+    qs = PointsRecord.objects.select_related('user').all().order_by('-created_at', '-id')
+    if openid:
+        qs = qs.filter(user__openid=openid)
+    if system_id:
+        qs = qs.filter(user__system_id=system_id)
+    if keyword:
+        qs = qs.filter(
+            Q(user__openid__icontains=keyword)
+            | Q(user__system_id__icontains=keyword)
+            | Q(user__phone_number__icontains=keyword)
+            | Q(user__nickname__icontains=keyword)
+        )
     if identity_type in {'OWNER', 'MERCHANT', 'PROPERTY'}:
         qs = qs.filter(identity_type=identity_type)
-    if cursor_filter:
-        cursor_dt, cursor_pk = cursor_filter
-        qs = qs.filter(Q(created_at__lt=cursor_dt) | Q(created_at=cursor_dt, id__lt=cursor_pk))
-    records = list(qs[: page_size + 1])
-    has_more = len(records) > page_size
-    sliced = records[:page_size]
+    if source_type:
+        qs = qs.filter(source_type=source_type)
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    records = list(qs[start : start + page_size])
     items = []
-    for record in sliced:
+    for record in records:
+        user = record.user
         items.append({
             'id': record.id,
             'openid': user.openid,
             'system_id': user.system_id,
+            'nickname': user.nickname,
             'identity_type': getattr(record, 'identity_type', None),
             'delta': record.change,
             'change': record.change,
             'daily_points': getattr(record, 'daily_points', 0),
             'total_points': getattr(record, 'total_points', 0),
+            'source_type': getattr(record, 'source_type', '') or '',
+            'source_meta': getattr(record, 'source_meta', {}) or {},
+            'source_text': build_source_text(record),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    next_cursor = f"{sliced[-1].created_at.isoformat()}#{sliced[-1].id}" if has_more and sliced else None
-    return json_ok({'list': items, 'has_more': has_more, 'next_cursor': next_cursor})
+    return json_ok({'list': items, 'total': total})

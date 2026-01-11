@@ -14,6 +14,7 @@ from wxcloudrun.models import (
     MerchantProfile,
     PropertyProfile,
     PointsThreshold,
+    PointsRecord,
     UserPointsAccount,
 )
 from wxcloudrun.services.points_service import get_points_account
@@ -43,7 +44,7 @@ def _build_points_accounts(accounts):
     return points_accounts
 
 
-def _update_points_accounts(user: UserInfo, payload):
+def _update_points_accounts(user: UserInfo, payload, *, admin=None, source_type: str = 'ADMIN_ADJUST'):
     """按 payload 更新积分账户（支持 dict / list 两种结构）。
 
     - dict：{"OWNER": {"total_points": 1}, "MERCHANT": {...}}
@@ -83,6 +84,8 @@ def _update_points_accounts(user: UserInfo, payload):
             identity_type=identity,
             defaults={'daily_points_date': today},
         )
+        old_daily_points = account.daily_points if account.daily_points_date == today else 0
+        old_total_points = account.total_points
         if has_daily:
             try:
                 account.daily_points = int(data.get('daily_points') or 0)
@@ -95,6 +98,30 @@ def _update_points_accounts(user: UserInfo, payload):
             except (TypeError, ValueError):
                 raise ValueError(f'points_accounts.{identity}.total_points 必须为整数')
         account.save()
+
+        # 写入管理员调整记录（仅在实际变化时记录）
+        delta_total = account.total_points - old_total_points if has_total else 0
+        delta_daily = account.daily_points - old_daily_points if has_daily else 0
+        delta_value = delta_total if has_total else delta_daily
+        if delta_value != 0 and admin:
+            PointsRecord.objects.create(
+                user=user,
+                identity_type=identity,
+                change=int(delta_value),
+                daily_points=account.daily_points if account.daily_points_date == today else 0,
+                total_points=account.total_points,
+                source_type=source_type,
+                source_meta={
+                    'operator': {
+                        'id': getattr(admin, 'id', None),
+                        'username': getattr(admin, 'username', '') or '',
+                    },
+                    'old_total_points': old_total_points,
+                    'new_total_points': account.total_points,
+                    'old_daily_points': old_daily_points,
+                    'new_daily_points': account.daily_points if account.daily_points_date == today else 0,
+                },
+            )
 
 
 @admin_token_required
@@ -399,17 +426,42 @@ def admin_users_detail(request, admin, system_id):
     points_account = None
     if 'points_accounts' in body:
         try:
-            _update_points_accounts(user, body.get('points_accounts'))
+            _update_points_accounts(user, body.get('points_accounts'), admin=admin, source_type='ADMIN_ADJUST')
         except ValueError as exc:
             return json_err(str(exc), status=400)
     if 'daily_points' in body or 'total_points' in body:
         points_account = get_points_account(user, user.active_identity)
+        old_daily_points = points_account.daily_points
+        old_total_points = points_account.total_points
         if 'daily_points' in body:
             points_account.daily_points = int(body['daily_points'])
             points_account.daily_points_date = date.today()
         if 'total_points' in body:
             points_account.total_points = int(body['total_points'])
         points_account.save()
+
+        delta_total = points_account.total_points - old_total_points if 'total_points' in body else 0
+        delta_daily = points_account.daily_points - old_daily_points if 'daily_points' in body else 0
+        delta_value = delta_total if 'total_points' in body else delta_daily
+        if delta_value != 0:
+            PointsRecord.objects.create(
+                user=user,
+                identity_type=points_account.identity_type,
+                change=int(delta_value),
+                daily_points=points_account.daily_points,
+                total_points=points_account.total_points,
+                source_type='ADMIN_ADJUST',
+                source_meta={
+                    'operator': {
+                        'id': getattr(admin, 'id', None),
+                        'username': getattr(admin, 'username', '') or '',
+                    },
+                    'old_total_points': old_total_points,
+                    'new_total_points': points_account.total_points,
+                    'old_daily_points': old_daily_points,
+                    'new_daily_points': points_account.daily_points,
+                },
+            )
     
     # 处理身份变更的关联档案同步
     try:

@@ -303,6 +303,8 @@ class PointsRecord(models.Model):
     change = models.IntegerField('积分变动值')  # 正负积分变动
     daily_points = models.IntegerField('当日积分', default=0)
     total_points = models.IntegerField('累计积分', default=0)
+    source_type = models.CharField('积分来源', max_length=50, blank=True, default='')
+    source_meta = models.JSONField('来源详情', blank=True, default=dict)
     created_at = models.DateTimeField('创建时间', default=datetime.now)
 
     class Meta:
@@ -310,6 +312,7 @@ class PointsRecord(models.Model):
         indexes = [
             models.Index(fields=['user']),
             models.Index(fields=['user', 'identity_type']),
+            models.Index(fields=['created_at'], name='PointsRecord_created_at_idx'),
         ]
         verbose_name = '积分记录'
         verbose_name_plural = '积分记录'
