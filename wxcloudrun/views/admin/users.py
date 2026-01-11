@@ -14,12 +14,87 @@ from wxcloudrun.models import (
     MerchantProfile,
     PropertyProfile,
     PointsThreshold,
+    UserPointsAccount,
 )
 from wxcloudrun.services.points_service import get_points_account
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 
 
 logger = logging.getLogger('log')
+
+
+_POINTS_IDENTITIES = ('OWNER', 'MERCHANT', 'PROPERTY')
+
+
+def _build_points_accounts(accounts):
+    """把 UserPointsAccount 列表序列化为 points_accounts（不创建缺失账户）。"""
+    today = date.today()
+    account_map = {a.identity_type: a for a in accounts}
+    points_accounts = {}
+    for identity in _POINTS_IDENTITIES:
+        account = account_map.get(identity)
+        if not account:
+            points_accounts[identity] = {'daily_points': 0, 'total_points': 0}
+            continue
+        points_accounts[identity] = {
+            'daily_points': account.daily_points if account.daily_points_date == today else 0,
+            'total_points': account.total_points,
+        }
+    return points_accounts
+
+
+def _update_points_accounts(user: UserInfo, payload):
+    """按 payload 更新积分账户（支持 dict / list 两种结构）。
+
+    - dict：{"OWNER": {"total_points": 1}, "MERCHANT": {...}}
+    - list：[{"identity_type": "OWNER", "total_points": 1}, ...]
+    """
+    today = date.today()
+
+    if isinstance(payload, dict):
+        items = list(payload.items())
+    elif isinstance(payload, list):
+        items = []
+        for item in payload:
+            if not isinstance(item, dict):
+                raise ValueError('points_accounts 数组元素必须为对象')
+            identity = item.get('identity_type')
+            if not identity:
+                raise ValueError('points_accounts.identity_type 必填')
+            items.append((identity, item))
+    else:
+        raise ValueError('points_accounts 必须为对象或数组')
+
+    for identity, data in items:
+        if identity not in _POINTS_IDENTITIES:
+            raise ValueError('points_accounts 身份类型仅支持 OWNER/MERCHANT/PROPERTY')
+        if data is None:
+            continue
+        if not isinstance(data, dict):
+            raise ValueError(f'points_accounts.{identity} 必须为对象')
+
+        has_daily = 'daily_points' in data
+        has_total = 'total_points' in data
+        if not has_daily and not has_total:
+            continue
+
+        account, _ = UserPointsAccount.objects.get_or_create(
+            user=user,
+            identity_type=identity,
+            defaults={'daily_points_date': today},
+        )
+        if has_daily:
+            try:
+                account.daily_points = int(data.get('daily_points') or 0)
+            except (TypeError, ValueError):
+                raise ValueError(f'points_accounts.{identity}.daily_points 必须为整数')
+            account.daily_points_date = today
+        if has_total:
+            try:
+                account.total_points = int(data.get('total_points') or 0)
+            except (TypeError, ValueError):
+                raise ValueError(f'points_accounts.{identity}.total_points 必须为整数')
+        account.save()
 
 
 @admin_token_required
@@ -51,7 +126,12 @@ def admin_users(request, admin):
         if page_size > 100:
             page_size = 100
 
-        qs = UserInfo.objects.select_related('owner_property').all().order_by('-updated_at', '-id')
+        qs = (
+            UserInfo.objects.select_related('owner_property')
+            .prefetch_related('points_accounts')
+            .all()
+            .order_by('-updated_at', '-id')
+        )
         if keyword:
             qs = qs.filter(
                 Q(phone_number__icontains=keyword)
@@ -62,6 +142,14 @@ def admin_users(request, admin):
         users = list(qs[start : start + page_size])
         avatar_file_ids = [u.avatar_url for u in users if u.avatar_url and u.avatar_url.startswith('cloud://')]
         temp_urls = get_temp_file_urls(avatar_file_ids) if avatar_file_ids else {}
+        user_ids = [u.id for u in users]
+        merchant_user_ids = set(
+            MerchantProfile.objects.filter(user_id__in=user_ids).values_list('user_id', flat=True)
+        )
+        property_user_ids = set(
+            PropertyProfile.objects.filter(user_id__in=user_ids).values_list('user_id', flat=True)
+        )
+
         items = []
         for u in users:
             avatar_data = None
@@ -76,9 +164,12 @@ def admin_users(request, admin):
                         'file_id': '',
                         'url': u.avatar_url
                     }
-            is_merchant = MerchantProfile.objects.filter(user=u).exists()
-            is_property = PropertyProfile.objects.filter(user=u).exists()
-            points_account = get_points_account(u, u.active_identity)
+
+            is_merchant = u.id in merchant_user_ids
+            is_property = u.id in property_user_ids
+            points_accounts = _build_points_accounts(list(u.points_accounts.all()))
+            points_identity = u.active_identity if u.active_identity in _POINTS_IDENTITIES else 'OWNER'
+            active_points = points_accounts.get(points_identity) or {'daily_points': 0, 'total_points': 0}
             items.append({
                 'system_id': u.system_id,
                 'openid': u.openid,
@@ -89,8 +180,9 @@ def admin_users(request, admin):
                 'is_property': is_property,
                 'avatar': avatar_data,
                 'phone_number': u.phone_number,
-                'daily_points': points_account.daily_points,
-                'total_points': points_account.total_points,
+                'daily_points': active_points['daily_points'],
+                'total_points': active_points['total_points'],
+                'points_accounts': points_accounts,
                 'owner_property_id': u.owner_property.property_id if u.owner_property else None,
                 'owner_property_name': u.owner_property.property_name if u.owner_property else None,
                 'created_at': u.created_at.strftime('%Y-%m-%d %H:%M:%S') if u.created_at else None,
@@ -219,6 +311,9 @@ def admin_users(request, admin):
                 except PropertyProfile.DoesNotExist:
                     return json_err('物业不存在', status=404)
         
+        points_accounts = _build_points_accounts(
+            list(UserPointsAccount.objects.filter(user=user, identity_type__in=_POINTS_IDENTITIES))
+        )
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
@@ -231,6 +326,7 @@ def admin_users(request, admin):
             'is_property': PropertyProfile.objects.filter(user=user).exists(),
             'daily_points': points_account.daily_points,
             'total_points': points_account.total_points,
+            'points_accounts': points_accounts,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
             'owner_property_name': user.owner_property.property_name if user.owner_property else None,
         }, status=201)
@@ -301,6 +397,11 @@ def admin_users_detail(request, admin, system_id):
             user.owner_property = None
 
     points_account = None
+    if 'points_accounts' in body:
+        try:
+            _update_points_accounts(user, body.get('points_accounts'))
+        except ValueError as exc:
+            return json_err(str(exc), status=400)
     if 'daily_points' in body or 'total_points' in body:
         points_account = get_points_account(user, user.active_identity)
         if 'daily_points' in body:
@@ -402,6 +503,9 @@ def admin_users_detail(request, admin, system_id):
 
         if points_account is None:
             points_account = get_points_account(user, user.active_identity)
+        points_accounts = _build_points_accounts(
+            list(UserPointsAccount.objects.filter(user=user, identity_type__in=_POINTS_IDENTITIES))
+        )
         return json_ok({
             'system_id': user.system_id,
             'openid': user.openid,
@@ -414,6 +518,7 @@ def admin_users_detail(request, admin, system_id):
             'is_property': PropertyProfile.objects.filter(user=user).exists(),
             'daily_points': points_account.daily_points,
             'total_points': points_account.total_points,
+            'points_accounts': points_accounts,
             'owner_property_id': user.owner_property.property_id if user.owner_property else None,
             'owner_property_name': user.owner_property.property_name if user.owner_property else None,
             'created_at': user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else None,
