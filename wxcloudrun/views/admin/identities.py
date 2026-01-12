@@ -52,6 +52,9 @@ def admin_identity_assign(request, admin, system_id):
         contact_phone = (body.get('merchant_phone') or '').strip()
         address = (body.get('merchant_address') or '').strip()
         banner_file_id = (body.get('banner_file_id') or '').strip()
+        merchant_type = (body.get('merchant_type') or 'NORMAL').strip().upper()
+        if merchant_type not in ['NORMAL', 'DISCOUNT_STORE']:
+            return json_err('merchant_type 仅支持 NORMAL/DISCOUNT_STORE', status=400)
         if need_create:
             if not merchant_name:
                 return json_err('商户名称为必填项', status=400)
@@ -68,6 +71,7 @@ def admin_identity_assign(request, admin, system_id):
             MerchantProfile.objects.create(
                 user=user,
                 merchant_name=merchant_name,
+                merchant_type=merchant_type,
                 description=body.get('merchant_description', ''),
                 address=address,
                 contact_phone=contact_phone,
@@ -78,6 +82,8 @@ def admin_identity_assign(request, admin, system_id):
             mp = user.merchant_profile
             if merchant_name:
                 mp.merchant_name = merchant_name
+            if 'merchant_type' in body:
+                mp.merchant_type = merchant_type
             if 'merchant_description' in body:
                 mp.description = body.get('merchant_description', '')
             if address:

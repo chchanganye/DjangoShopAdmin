@@ -6,7 +6,7 @@ from django.db.models import Q
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
-from wxcloudrun.models import UserInfo, PointsRecord
+from wxcloudrun.models import UserInfo, PointsRecord, DiscountRedeemRecord
 from wxcloudrun.services.points_service import get_points_share_setting
 
 
@@ -109,6 +109,19 @@ def admin_points_records(request, admin):
                 return f'管理员调整：{username}，累计积分 {old_total} → {new_total}'
             return f'管理员调整：{username}'
 
+        if source_type == 'DISCOUNT_REDEEM':
+            merchant_name = meta.get('merchant_name') or ''
+            merchant_id = meta.get('merchant_id') or ''
+            phone_number = meta.get('target_phone_number') or meta.get('target_phone') or ''
+            points = meta.get('points')
+            direction = meta.get('direction') or ''
+            base = f'折扣店兑换：{merchant_name}({merchant_id})' if (merchant_name or merchant_id) else '折扣店兑换'
+            if direction == 'owner_debit':
+                return f'{base}，扣除业主 {phone_number} {points} 积分'
+            if direction == 'merchant_credit':
+                return f'{base}，转入折扣店 {points} 积分（业主 {phone_number}）'
+            return f'{base}，积分 {points}（业主 {phone_number}）'
+
         return source_type or '-'
 
     current_param = request.GET.get('current') or request.GET.get('page')
@@ -175,5 +188,93 @@ def admin_points_records(request, admin):
             'source_meta': getattr(record, 'source_meta', {}) or {},
             'source_text': build_source_text(record),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        })
+    return json_ok({'list': items, 'total': total})
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_discount_redeem_records(request, admin):
+    """折扣店积分兑换记录（后台控制中心）"""
+    current_param = request.GET.get('current') or request.GET.get('page')
+    size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
+
+    page = 1
+    page_size = 20
+    if current_param:
+        try:
+            page = int(current_param)
+        except (TypeError, ValueError):
+            return json_err('current 必须为数字', status=400)
+    if size_param:
+        try:
+            page_size = int(size_param)
+        except (TypeError, ValueError):
+            return json_err('size 必须为数字', status=400)
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 1
+    if page_size > 100:
+        page_size = 100
+
+    keyword = (request.GET.get('keyword') or request.GET.get('q') or '').strip()
+    merchant_id = (request.GET.get('merchant_id') or '').strip()
+    merchant_openid = (request.GET.get('merchant_openid') or '').strip()
+    owner_openid = (request.GET.get('openid') or request.GET.get('owner_openid') or '').strip()
+    owner_system_id = (request.GET.get('system_id') or '').strip()
+
+    qs = (
+        DiscountRedeemRecord.objects.select_related('merchant', 'merchant__user', 'owner')
+        .all()
+        .order_by('-created_at', '-id')
+    )
+    if merchant_id:
+        qs = qs.filter(merchant__merchant_id=merchant_id)
+    if merchant_openid:
+        qs = qs.filter(merchant__user__openid=merchant_openid)
+    if owner_openid:
+        qs = qs.filter(owner__openid=owner_openid)
+    if owner_system_id:
+        qs = qs.filter(owner__system_id=owner_system_id)
+    if keyword:
+        qs = qs.filter(
+            Q(redeem_id__icontains=keyword)
+            | Q(owner_phone_number__icontains=keyword)
+            | Q(owner__openid__icontains=keyword)
+            | Q(owner__system_id__icontains=keyword)
+            | Q(owner__phone_number__icontains=keyword)
+            | Q(owner__nickname__icontains=keyword)
+            | Q(merchant__merchant_id__icontains=keyword)
+            | Q(merchant__merchant_name__icontains=keyword)
+        )
+
+    total = qs.count()
+    start = (page - 1) * page_size
+    records = list(qs[start : start + page_size])
+
+    items = []
+    for record in records:
+        merchant = record.merchant
+        merchant_user = getattr(merchant, 'user', None) if merchant else None
+        owner = record.owner
+        items.append({
+            'redeem_id': record.redeem_id,
+            'points': record.points,
+            'merchant': {
+                'merchant_id': merchant.merchant_id,
+                'merchant_name': merchant.merchant_name,
+                'merchant_type': getattr(merchant, 'merchant_type', 'NORMAL'),
+                'openid': merchant_user.openid if merchant_user else None,
+            } if merchant else None,
+            'owner': {
+                'openid': owner.openid,
+                'system_id': owner.system_id,
+                'nickname': owner.nickname,
+                'phone_number': owner.phone_number,
+            } if owner else None,
+            'owner_phone_number': record.owner_phone_number,
+            'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S') if record.created_at else None,
+            'updated_at': record.updated_at.strftime('%Y-%m-%d %H:%M:%S') if record.updated_at else None,
         })
     return json_ok({'list': items, 'total': total})

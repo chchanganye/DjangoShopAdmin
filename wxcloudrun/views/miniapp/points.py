@@ -8,7 +8,7 @@ from django.db import transaction
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.utils.auth import get_openid
-from wxcloudrun.models import UserInfo, PropertyProfile, MerchantProfile, PointsThreshold
+from wxcloudrun.models import UserInfo, PropertyProfile, MerchantProfile, PointsThreshold, DiscountRedeemRecord
 from wxcloudrun.services.points_service import (
     change_points_account,
     get_points_account_for_update,
@@ -261,6 +261,9 @@ def merchant_points_add(request):
     except MerchantProfile.DoesNotExist:
         return json_err('商户档案不存在', status=400)
 
+    if getattr(merchant, 'merchant_type', 'NORMAL') == 'DISCOUNT_STORE':
+        return json_err('折扣店请使用积分兑换功能', status=403)
+
     try:
         body = json.loads(request.body.decode('utf-8'))
     except Exception:
@@ -369,6 +372,117 @@ def merchant_points_add(request):
             'merchant_points': order.merchant_points,
             'owner_rate': order.owner_rate,
             'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else None,
+        },
+    })
+
+
+@openid_required
+@require_http_methods(["POST"])
+def discount_store_redeem(request):
+    """折扣店积分兑换：扣除业主积分，转入折扣店积分"""
+    openid = get_openid(request)
+    try:
+        merchant_user = UserInfo.objects.select_related('merchant_profile').get(openid=openid)
+    except UserInfo.DoesNotExist:
+        return json_err('用户不存在', status=404)
+
+    if merchant_user.active_identity != 'MERCHANT':
+        return json_err('仅商户身份可操作', status=403)
+
+    try:
+        merchant = merchant_user.merchant_profile
+    except MerchantProfile.DoesNotExist:
+        return json_err('商户档案不存在', status=400)
+
+    if getattr(merchant, 'merchant_type', 'NORMAL') != 'DISCOUNT_STORE':
+        return json_err('仅折扣店商户可进行积分兑换', status=403)
+
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return json_err('请求体格式错误', status=400)
+
+    phone_number = (body.get('user_phone_number') or body.get('phone_number') or '').strip()
+    points = body.get('points')
+    if not phone_number or points is None:
+        return json_err('缺少参数 user_phone_number 或 points', status=400)
+
+    try:
+        points_int = int(points)
+    except (TypeError, ValueError):
+        return json_err('points 必须是整数', status=400)
+
+    if points_int <= 0:
+        return json_err('points 必须为正整数', status=400)
+
+    target_user = UserInfo.objects.filter(phone_number=phone_number).order_by('-id').first()
+    if not target_user:
+        return json_err('找不到该手机号用户', status=404)
+
+    with transaction.atomic():
+        lock_pairs = sorted(
+            [(merchant_user, 'MERCHANT'), (target_user, 'OWNER')],
+            key=lambda pair: (pair[0].id, pair[1]),
+        )
+        locked_accounts = {}
+        for lock_user, lock_identity in lock_pairs:
+            locked_accounts[(lock_user.id, lock_identity)] = get_points_account_for_update(lock_user, lock_identity)
+
+        merchant_account = locked_accounts[(merchant_user.id, 'MERCHANT')]
+        owner_account = locked_accounts[(target_user.id, 'OWNER')]
+
+        if owner_account.total_points < points_int:
+            return json_err('积分余额不足', status=400)
+
+        redeem_meta = {
+            'action': 'discount_store_redeem',
+            'merchant_id': merchant.merchant_id,
+            'merchant_name': merchant.merchant_name,
+            'merchant_openid': merchant_user.openid,
+            'target_system_id': target_user.system_id,
+            'target_openid': target_user.openid,
+            'target_phone_number': target_user.phone_number,
+            'points': points_int,
+        }
+
+        owner_account = change_points_account(
+            owner_account,
+            -points_int,
+            source_type='DISCOUNT_REDEEM',
+            source_meta={**redeem_meta, 'direction': 'owner_debit'},
+        )
+        merchant_account = change_points_account(
+            merchant_account,
+            points_int,
+            source_type='DISCOUNT_REDEEM',
+            source_meta={**redeem_meta, 'direction': 'merchant_credit'},
+        )
+
+        record = DiscountRedeemRecord.objects.create(
+            merchant=merchant,
+            owner=target_user,
+            owner_phone_number=(target_user.phone_number or phone_number),
+            points=points_int,
+        )
+
+    return json_ok({
+        'redeem': {
+            'redeem_id': record.redeem_id,
+            'points': record.points,
+            'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S') if record.created_at else None,
+        },
+        'target_user': {
+            'system_id': target_user.system_id,
+            'phone_number': target_user.phone_number,
+            'daily_points': owner_account.daily_points,
+            'total_points': owner_account.total_points,
+            'points_deducted': points_int,
+        },
+        'merchant': {
+            'merchant_id': merchant.merchant_id,
+            'daily_points': merchant_account.daily_points,
+            'total_points': merchant_account.total_points,
+            'points_added': points_int,
         },
     })
 

@@ -322,6 +322,10 @@ def identity_apply(request):
         application.merchant_description = body.get('merchant_description', '')
         application.merchant_address = body.get('merchant_address', '')
         application.merchant_phone = body.get('merchant_phone', '')
+        merchant_type = (body.get('merchant_type') or 'NORMAL').strip().upper()
+        if merchant_type not in ['NORMAL', 'DISCOUNT_STORE']:
+            return json_err('merchant_type 仅支持 NORMAL/DISCOUNT_STORE', status=400)
+        application.merchant_type = merchant_type
         
         if not application.merchant_name:
             return json_err('商户名称为必填项', status=400)
@@ -521,6 +525,7 @@ def user_profile(request):
             data['merchant'] = {
                 'merchant_id': merchant.merchant_id,
                 'merchant_name': merchant.merchant_name,
+                'merchant_type': getattr(merchant, 'merchant_type', 'NORMAL'),
                 'title': merchant.title,
                 'description': merchant.description,
                 'banner': banner_data,

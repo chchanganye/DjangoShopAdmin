@@ -38,6 +38,7 @@ from wxcloudrun.views import (
     points_change,
     merchant_points_add,
     owner_property_fee_pay,
+    discount_store_redeem,
     orders_list,
     order_review_create,
     merchant_reviews_list,
@@ -91,6 +92,8 @@ urlpatterns = (
     url(r'^api/points/merchant/add/?$', merchant_points_add),
     # 业主使用积分抵扣物业费（积分转给物业）
     url(r'^api/points/property/pay/?$', owner_property_fee_pay),
+    # 折扣店积分兑换：扣除业主积分，转入折扣店积分
+    url(r'^api/points/discount/redeem/?$', discount_store_redeem),
 
     # 订单与评价
     url(r'^api/orders/?$', orders_list),
@@ -117,6 +120,8 @@ urlpatterns = (
     # 管理员-商户管理 CRUD（使用 openid）
     url(r'^api/admin/merchants/?$', views.admin_merchants),                    # GET（只读，通过用户列表创建）
     url(r'^api/admin/merchants/(?P<openid>[^/]+)/?$', views.admin_merchants_detail),   # PUT/DELETE
+    # 管理员-折扣店列表
+    url(r'^api/admin/discount-stores/?$', views.admin_discount_stores),        # GET
 
     # 管理员-推荐商户配置（最多4个）
     url(r'^api/admin/recommended-merchants/?$', views.admin_recommended_merchants),   # GET/PUT
@@ -146,6 +151,8 @@ urlpatterns = (
 
     # 管理员-积分变更记录查询
     url(r'^api/admin/points-records/?$', views.admin_points_records),          # GET
+    # 管理员-折扣店积分兑换记录
+    url(r'^api/admin/discount-redeem-records/?$', views.admin_discount_redeem_records),  # GET
 
     # 管理员-订单与评价记录
     url(r'^api/admin/orders/?$', views.admin_orders),                          # GET

@@ -18,7 +18,13 @@ from wxcloudrun.views.miniapp.merchant import (
     merchant_update_profile,
 )
 from wxcloudrun.views.miniapp.property import properties_list, owners_by_property, property_update_profile
-from wxcloudrun.views.miniapp.points import threshold_query, points_change, merchant_points_add, owner_property_fee_pay
+from wxcloudrun.views.miniapp.points import (
+    threshold_query,
+    points_change,
+    merchant_points_add,
+    owner_property_fee_pay,
+    discount_store_redeem,
+)
 from wxcloudrun.views.miniapp.orders import orders_list, order_review_create, merchant_reviews_list
 from wxcloudrun.views.miniapp.contract import contract_image
 from wxcloudrun.views.miniapp.signature import contract_signature_status, contract_signature_update
@@ -48,6 +54,7 @@ __all__ = [
     'points_change',
     'merchant_points_add',
     'owner_property_fee_pay',
+    'discount_store_redeem',
     'orders_list',
     'order_review_create',
     'merchant_reviews_list',

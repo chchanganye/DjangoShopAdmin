@@ -34,6 +34,12 @@ IDENTITY_CHOICES = (
 )
 
 
+MERCHANT_TYPE_CHOICES = (
+    ('NORMAL', '普通商户'),
+    ('DISCOUNT_STORE', '折扣店'),
+)
+
+
 POINTS_IDENTITY_CHOICES = (
     ('OWNER', 'OWNER'),
     ('PROPERTY', 'PROPERTY'),
@@ -216,6 +222,7 @@ class MerchantProfile(models.Model):
     user = models.OneToOneField(UserInfo, verbose_name='关联用户', on_delete=models.CASCADE, related_name='merchant_profile')
     merchant_id = models.CharField('商户ID', max_length=32, unique=True)
     merchant_name = models.CharField('商户名称', max_length=200)
+    merchant_type = models.CharField('商户类型', max_length=20, choices=MERCHANT_TYPE_CHOICES, default='NORMAL')
     title = models.CharField('标题', max_length=200, blank=True, default='')  # 展示标题
     description = models.TextField('简介', blank=True, default='')
     banner_url = models.CharField('横幅展示图云文件ID', max_length=255, blank=True, default='')  # 存储单张图片的云文件ID，如：cloud://xxx.jpg
@@ -416,6 +423,49 @@ class MerchantReview(models.Model):
         return f"{self.merchant.merchant_name}({self.rating}★)"
 
 
+class DiscountRedeemRecord(models.Model):
+    """折扣店积分兑换记录（业主扣分 -> 折扣店加分）"""
+
+    redeem_id = models.CharField('兑换ID', max_length=32, unique=True)
+    merchant = models.ForeignKey(
+        MerchantProfile,
+        verbose_name='折扣店商户',
+        on_delete=models.CASCADE,
+        related_name='discount_redeem_records',
+    )
+    owner = models.ForeignKey(
+        UserInfo,
+        verbose_name='业主用户',
+        on_delete=models.CASCADE,
+        related_name='discount_redeem_records',
+    )
+    owner_phone_number = models.CharField('业主手机号', max_length=32, blank=True, default='')
+    points = models.PositiveIntegerField('兑换积分', default=0)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'DiscountRedeemRecord'
+        indexes = [
+            models.Index(fields=['redeem_id'], name='DRR_redeem_id_idx'),
+            models.Index(fields=['merchant'], name='DRR_merchant_idx'),
+            models.Index(fields=['owner'], name='DRR_owner_idx'),
+            models.Index(fields=['created_at'], name='DRR_created_at_idx'),
+        ]
+        verbose_name = '折扣店兑换记录'
+        verbose_name_plural = '折扣店兑换记录'
+
+    def __str__(self):
+        return f"{self.redeem_id}({self.points})"
+
+    def save(self, *args, **kwargs):
+        if not self.redeem_id:
+            self.redeem_id = _generate_seq('REDEEM', DiscountRedeemRecord, 'redeem_id', width=6)
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
 class PointsShareSetting(models.Model):
     """积分分成配置（全局仅一条记录）"""
 
@@ -573,6 +623,7 @@ class IdentityApplication(models.Model):
     merchant_description = models.TextField('商户简介', blank=True, default='')
     merchant_address = models.CharField('商户地址', max_length=300, blank=True, default='')
     merchant_phone = models.CharField('商户联系电话', max_length=32, blank=True, default='')
+    merchant_type = models.CharField('商户类型', max_length=20, choices=MERCHANT_TYPE_CHOICES, blank=True, default='NORMAL')
     
     # 物业申请需填写的信息
     property_name = models.CharField('物业名称', max_length=200, blank=True, default='')

@@ -297,6 +297,10 @@ def admin_users(request, admin):
             banner_file_id = body.get('banner_file_id')
             if not banner_file_id:
                 return json_err('商户横幅展示图为必填项', status=400)
+
+            merchant_type = (body.get('merchant_type') or 'NORMAL').strip().upper()
+            if merchant_type not in ['NORMAL', 'DISCOUNT_STORE']:
+                return json_err('merchant_type 仅支持 NORMAL/DISCOUNT_STORE', status=400)
             
             # 验证分类是否存在
             try:
@@ -308,6 +312,7 @@ def admin_users(request, admin):
             MerchantProfile.objects.create(
                 user=user,
                 merchant_name=merchant_name,
+                merchant_type=merchant_type,
                 description=body.get('merchant_description', ''),
                 address=address,
                 contact_phone=contact_phone,
@@ -489,6 +494,9 @@ def admin_users_detail(request, admin, system_id):
                         return json_err('商户地址为必填项', status=400)
                     if not banner_file_id:
                         return json_err('商户横幅展示图为必填项', status=400)
+                    merchant_type = (body.get('merchant_type') or 'NORMAL').strip().upper()
+                    if merchant_type not in ['NORMAL', 'DISCOUNT_STORE']:
+                        return json_err('merchant_type 仅支持 NORMAL/DISCOUNT_STORE', status=400)
                     try:
                         category = Category.objects.get(id=category_id)
                     except Category.DoesNotExist:
@@ -496,6 +504,7 @@ def admin_users_detail(request, admin, system_id):
                     MerchantProfile.objects.create(
                         user=user,
                         merchant_name=merchant_name,
+                        merchant_type=merchant_type,
                         description=body.get('merchant_description', ''),
                         address=address,
                         contact_phone=contact_phone,

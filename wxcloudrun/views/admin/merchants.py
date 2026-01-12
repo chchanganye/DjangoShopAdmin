@@ -14,10 +14,17 @@ from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud
 
 logger = logging.getLogger('log')
 
+MERCHANT_TYPES = {'NORMAL', 'DISCOUNT_STORE'}
 
-@admin_token_required
-@require_http_methods(["GET"])
-def admin_merchants(request, admin):
+
+def _normalize_merchant_type(value: str):
+    v = (value or '').strip().upper()
+    if v in MERCHANT_TYPES:
+        return v
+    return None
+
+
+def _parse_pagination(request):
     current_param = request.GET.get('current') or request.GET.get('page')
     size_param = request.GET.get('size') or request.GET.get('page_size') or request.GET.get('limit')
 
@@ -28,23 +35,39 @@ def admin_merchants(request, admin):
         try:
             page = int(current_param)
         except (TypeError, ValueError):
-            return json_err('current 必须为数字', status=400)
+            raise ValueError('current 必须为数字')
     if size_param:
         try:
             page_size = int(size_param)
         except (TypeError, ValueError):
-            return json_err('size 必须为数字', status=400)
+            raise ValueError('size 必须为数字')
     if page < 1:
         page = 1
     if page_size < 1:
         page_size = 1
     if page_size > 100:
         page_size = 100
+    return page, page_size
+
+
+def _admin_merchants_list(request, merchant_type_filter=None):
+    try:
+        page, page_size = _parse_pagination(request)
+    except ValueError as exc:
+        return json_err(str(exc), status=400)
+
+    merchant_type = (
+        merchant_type_filter
+        or _normalize_merchant_type(request.GET.get('merchant_type') or request.GET.get('type') or '')
+    )
 
     qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('-updated_at', '-id')
+    if merchant_type:
+        qs = qs.filter(merchant_type=merchant_type)
     total = qs.count()
     start = (page - 1) * page_size
     merchants = list(qs[start : start + page_size])
+
     all_file_ids = []
     for m in merchants:
         if m.banner_url and m.banner_url.startswith('cloud://'):
@@ -78,6 +101,7 @@ def admin_merchants(request, admin):
             'openid': m.user.openid if m.user else None,
             'merchant_id': m.merchant_id,
             'merchant_name': m.merchant_name,
+            'merchant_type': getattr(m, 'merchant_type', 'NORMAL'),
             'title': m.title,
             'description': m.description,
             'banner': banner_data,
@@ -98,6 +122,19 @@ def admin_merchants(request, admin):
             'total_points': get_points_account(m.user, 'MERCHANT').total_points if m.user else 0,
         })
     return json_ok({'list': items, 'total': total})
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_merchants(request, admin):
+    return _admin_merchants_list(request, merchant_type_filter=None)
+
+
+@admin_token_required
+@require_http_methods(["GET"])
+def admin_discount_stores(request, admin):
+    """折扣店列表（后台控制中心）"""
+    return _admin_merchants_list(request, merchant_type_filter='DISCOUNT_STORE')
 
 
 @admin_token_required

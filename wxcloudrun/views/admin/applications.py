@@ -59,6 +59,7 @@ def admin_applications_list(request, admin):
             'merchant_description': app.merchant_description,
             'merchant_address': app.merchant_address,
             'merchant_phone': app.merchant_phone,
+            'merchant_type': getattr(app, 'merchant_type', 'NORMAL'),
             'property_name': app.property_name,
             'property_community': app.property_community,
             'reviewed_by': app.reviewed_by.username if app.reviewed_by else None,
@@ -112,6 +113,7 @@ def admin_application_approve(request, admin):
                 MerchantProfile.objects.create(
                     user=user,
                     merchant_name=application.merchant_name,
+                    merchant_type=getattr(application, 'merchant_type', 'NORMAL') or 'NORMAL',
                     description=application.merchant_description,
                     address=application.merchant_address,
                     contact_phone=application.merchant_phone,

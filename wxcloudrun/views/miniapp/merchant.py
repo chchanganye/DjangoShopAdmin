@@ -74,7 +74,12 @@ def _build_cursor(obj: MerchantProfile):
 @require_http_methods(["GET"])
 def merchants_list(request):
     """获取商户列表"""
-    qs = MerchantProfile.objects.select_related('user', 'category').all().order_by('-updated_at', '-id')
+    qs = (
+        MerchantProfile.objects.select_related('user', 'category')
+        .exclude(merchant_type='DISCOUNT_STORE')
+        .all()
+        .order_by('-updated_at', '-id')
+    )
     category_param = request.GET.get('categoryId') or request.GET.get('category_id')
     category_value = None
     if category_param:
@@ -195,6 +200,7 @@ def merchants_recommended(request):
 
     qs = (
         RecommendedMerchant.objects.select_related('merchant__user', 'merchant__category')
+        .exclude(merchant__merchant_type='DISCOUNT_STORE')
         .all()
         .order_by('sort_order', 'id')
     )
