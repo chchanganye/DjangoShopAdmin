@@ -41,6 +41,12 @@ POINTS_IDENTITY_CHOICES = (
 )
 
 
+ORDER_STATUS_CHOICES = (
+    ('PENDING_REVIEW', '待评价'),
+    ('REVIEWED', '已评价'),
+)
+
+
 def _generate_seq(prefix: str, model_cls, field_name: str, width: int = 3):
     """
     Generate a unique sequential ID with given prefix and zero-padded width.
@@ -316,6 +322,98 @@ class PointsRecord(models.Model):
         ]
         verbose_name = '积分记录'
         verbose_name_plural = '积分记录'
+
+
+class SettlementOrder(models.Model):
+    """商户订单结算记录（用于业主评价与后台对账）"""
+
+    order_id = models.CharField('订单ID', max_length=32, unique=True)
+    merchant = models.ForeignKey(
+        MerchantProfile,
+        verbose_name='商户',
+        on_delete=models.CASCADE,
+        related_name='settlement_orders',
+    )
+    owner = models.ForeignKey(
+        UserInfo,
+        verbose_name='业主用户',
+        on_delete=models.CASCADE,
+        related_name='settlement_orders',
+    )
+
+    amount = models.DecimalField('订单金额', max_digits=10, decimal_places=2, default=0)
+    amount_int = models.IntegerField('结算金额(取整)', default=0)
+
+    merchant_points = models.IntegerField('商户积分', default=0)
+    owner_points = models.IntegerField('业主积分', default=0)
+    owner_rate = models.PositiveIntegerField('业主奖励比例(%)', default=0)
+
+    status = models.CharField('订单状态', max_length=20, choices=ORDER_STATUS_CHOICES, default='PENDING_REVIEW')
+    reviewed_at = models.DateTimeField('评价时间', null=True, blank=True)
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'SettlementOrder'
+        indexes = [
+            models.Index(fields=['order_id']),
+            models.Index(fields=['merchant']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = '订单结算记录'
+        verbose_name_plural = '订单结算记录'
+
+    def __str__(self):
+        return f"{self.order_id}({self.status})"
+
+    def save(self, *args, **kwargs):
+        if not self.order_id:
+            self.order_id = _generate_seq('ORDER', SettlementOrder, 'order_id', width=6)
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
+class MerchantReview(models.Model):
+    """业主对商户的评价（仅允许对已结算订单评价）"""
+
+    order = models.OneToOneField(
+        SettlementOrder,
+        verbose_name='订单',
+        on_delete=models.CASCADE,
+        related_name='review',
+    )
+    merchant = models.ForeignKey(
+        MerchantProfile,
+        verbose_name='商户',
+        on_delete=models.CASCADE,
+        related_name='reviews',
+    )
+    owner = models.ForeignKey(
+        UserInfo,
+        verbose_name='业主用户',
+        on_delete=models.CASCADE,
+        related_name='merchant_reviews',
+    )
+    rating = models.PositiveIntegerField('评分(1-5)', default=5)
+    content = models.CharField('评价内容', max_length=500, blank=True, default='')
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'MerchantReview'
+        indexes = [
+            models.Index(fields=['merchant']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = '商户评价'
+        verbose_name_plural = '商户评价'
+
+    def __str__(self):
+        return f"{self.merchant.merchant_name}({self.rating}★)"
 
 
 class PointsShareSetting(models.Model):

@@ -38,6 +38,9 @@ from wxcloudrun.views import (
     points_change,
     merchant_points_add,
     owner_property_fee_pay,
+    orders_list,
+    order_review_create,
+    merchant_reviews_list,
     contract_image,
     contract_signature_status,
     contract_signature_update,
@@ -65,6 +68,7 @@ urlpatterns = (
     # 商户信息
     url(r'^api/merchants/?$', merchants_list),
     url(r'^api/merchants/recommended/?$', merchants_recommended),
+    url(r'^api/merchants/(?P<merchant_id>[^/]+)/reviews/?$', merchant_reviews_list),
     url(r'^api/merchants/(?P<merchant_id>[^/]+)/?$', merchant_detail),
     url(r'^api/merchant/banner/?$', merchant_update_banner),                  # PUT 商户更新横幅
     url(r'^api/merchant/license/?$', merchant_business_license),              # GET/PUT 商户营业执照
@@ -87,6 +91,10 @@ urlpatterns = (
     url(r'^api/points/merchant/add/?$', merchant_points_add),
     # 业主使用积分抵扣物业费（积分转给物业）
     url(r'^api/points/property/pay/?$', owner_property_fee_pay),
+
+    # 订单与评价
+    url(r'^api/orders/?$', orders_list),
+    url(r'^api/orders/(?P<order_id>[^/]+)/review/?$', order_review_create),
     # 协议合同图片
     url(r'^api/contract/image/?$', contract_image),
     # 合同签名（状态与提交）
@@ -138,6 +146,10 @@ urlpatterns = (
 
     # 管理员-积分变更记录查询
     url(r'^api/admin/points-records/?$', views.admin_points_records),          # GET
+
+    # 管理员-订单与评价记录
+    url(r'^api/admin/orders/?$', views.admin_orders),                          # GET
+    url(r'^api/admin/reviews/?$', views.admin_reviews),                        # GET
     
     # 管理员-身份申请审核管理
     url(r'^api/admin/applications/?$', views.admin_applications_list),         # GET 获取申请列表

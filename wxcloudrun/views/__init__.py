@@ -25,6 +25,9 @@ from wxcloudrun.views.miniapp import (
     points_change,
     merchant_points_add,
     owner_property_fee_pay,
+    orders_list,
+    order_review_create,
+    merchant_reviews_list,
     contract_image,
     contract_signature_status,
     contract_signature_update,
@@ -62,5 +65,7 @@ from wxcloudrun.views.admin import (
     admin_contact_info,
     admin_feedbacks,
     admin_recommended_merchants,
+    admin_orders,
+    admin_reviews,
 )
 

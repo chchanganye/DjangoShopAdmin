@@ -14,6 +14,7 @@ from wxcloudrun.services.points_service import (
     get_points_account_for_update,
     get_points_share_setting,
 )
+from wxcloudrun.services.order_service import create_settlement_order
 
 
 logger = logging.getLogger('log')
@@ -331,6 +332,16 @@ def merchant_points_add(request):
                 source_meta={**settlement_meta, 'direction': 'owner_credit'},
             )
 
+        order = create_settlement_order(
+            merchant=merchant,
+            owner=target_user,
+            amount=amount_decimal,
+            amount_int=delta,
+            merchant_points=merchant_points,
+            owner_points=owner_points,
+            owner_rate=owner_rate,
+        )
+
     return json_ok({
         'target_user': {
             'system_id': target_user.system_id,
@@ -348,6 +359,16 @@ def merchant_points_add(request):
         'share_ratio': {
             'merchant_rate': 100,
             'owner_rate': owner_rate,
+        },
+        'order': {
+            'order_id': order.order_id,
+            'status': order.status,
+            'amount': str(order.amount),
+            'amount_int': order.amount_int,
+            'owner_points': order.owner_points,
+            'merchant_points': order.merchant_points,
+            'owner_rate': order.owner_rate,
+            'created_at': order.created_at.strftime('%Y-%m-%d %H:%M:%S') if order.created_at else None,
         },
     })
 

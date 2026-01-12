@@ -18,6 +18,7 @@ from wxcloudrun.views.admin.identities import admin_identity_assign, admin_ident
 from wxcloudrun.views.admin.contact import admin_contact_info
 from wxcloudrun.views.admin.feedbacks import admin_feedbacks
 from wxcloudrun.views.admin.recommended_merchants import admin_recommended_merchants
+from wxcloudrun.views.admin.orders import admin_orders, admin_reviews
 
 __all__ = [
     'admin_login',
@@ -50,4 +51,6 @@ __all__ = [
     'admin_contact_info',
     'admin_feedbacks',
     'admin_recommended_merchants',
+    'admin_orders',
+    'admin_reviews',
 ]
