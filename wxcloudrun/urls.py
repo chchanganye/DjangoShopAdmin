@@ -157,6 +157,7 @@ urlpatterns = (
     # 管理员-订单与评价记录
     url(r'^api/admin/orders/?$', views.admin_orders),                          # GET
     url(r'^api/admin/reviews/?$', views.admin_reviews),                        # GET
+    url(r'^api/admin/reviews/(?P<review_id>\d+)/?$', views.admin_review_delete),  # DELETE
     
     # 管理员-身份申请审核管理
     url(r'^api/admin/applications/?$', views.admin_applications_list),         # GET 获取申请列表

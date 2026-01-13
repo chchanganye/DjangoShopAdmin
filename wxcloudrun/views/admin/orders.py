@@ -1,11 +1,13 @@
 """管理员订单与评价视图"""
 import logging
 
+from django.db import transaction
 from django.db.models import Q
 from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import admin_token_required
-from wxcloudrun.models import MerchantReview, SettlementOrder
+from wxcloudrun.models import MerchantProfile, MerchantReview, SettlementOrder
+from wxcloudrun.services.order_service import refresh_merchant_rating
 from wxcloudrun.utils.responses import json_ok, json_err
 
 
@@ -201,3 +203,42 @@ def admin_reviews(request, admin):
         })
     return json_ok({'list': items, 'total': total})
 
+
+@admin_token_required
+@require_http_methods(["DELETE"])
+def admin_review_delete(request, admin, review_id):
+    """删除评价记录（后台控制中心）"""
+    try:
+        rid = int(review_id)
+    except (TypeError, ValueError):
+        return json_err('review_id 必须为数字', status=400)
+
+    with transaction.atomic():
+        try:
+            review = (
+                MerchantReview.objects.select_related('order', 'merchant')
+                .select_for_update()
+                .get(id=rid)
+            )
+        except MerchantReview.DoesNotExist:
+            return json_err('评价不存在', status=404)
+
+        order = review.order
+        merchant = review.merchant
+
+        if order:
+            order_locked = SettlementOrder.objects.select_for_update().get(id=order.id)
+            order_locked.status = 'PENDING_REVIEW'
+            order_locked.reviewed_at = None
+            order_locked.save(update_fields=['status', 'reviewed_at', 'updated_at'])
+
+        review.delete()
+
+        if merchant:
+            merchant_locked = MerchantProfile.objects.select_for_update().get(id=merchant.id)
+            refresh_merchant_rating(merchant_locked)
+
+    return json_ok({
+        'review_id': rid,
+        'deleted': True,
+    })

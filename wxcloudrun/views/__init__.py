@@ -70,5 +70,6 @@ from wxcloudrun.views.admin import (
     admin_recommended_merchants,
     admin_orders,
     admin_reviews,
+    admin_review_delete,
 )
 
