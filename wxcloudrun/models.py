@@ -579,6 +579,63 @@ class UserFeedback(models.Model):
         super().save(*args, **kwargs)
 
 
+class Notification(models.Model):
+    """系统通知/消息"""
+
+    title = models.CharField('通知标题', max_length=200)
+    content = models.TextField('通知内容', default='')
+
+    created_at = models.DateTimeField('创建时间', default=datetime.now)
+    updated_at = models.DateTimeField('更新时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'Notification'
+        indexes = [
+            models.Index(fields=['created_at'], name='Notification_created_at_idx'),
+        ]
+        verbose_name = '通知'
+        verbose_name_plural = '通知'
+
+    def __str__(self):
+        return f"{self.title}({self.id})"
+
+    def save(self, *args, **kwargs):
+        self.updated_at = datetime.now()
+        super().save(*args, **kwargs)
+
+
+class NotificationRead(models.Model):
+    """用户通知已读记录"""
+
+    notification = models.ForeignKey(
+        Notification,
+        verbose_name='通知',
+        on_delete=models.CASCADE,
+        related_name='reads',
+    )
+    user = models.ForeignKey(
+        UserInfo,
+        verbose_name='用户',
+        on_delete=models.CASCADE,
+        related_name='notification_reads',
+    )
+    read_at = models.DateTimeField('阅读时间', default=datetime.now)
+
+    class Meta:
+        db_table = 'NotificationRead'
+        unique_together = ('notification', 'user')
+        indexes = [
+            models.Index(fields=['user'], name='NotificationRead_user_idx'),
+            models.Index(fields=['notification'], name='NotificationRead_notice_idx'),
+            models.Index(fields=['read_at'], name='NotificationRead_read_at_idx'),
+        ]
+        verbose_name = '通知阅读记录'
+        verbose_name_plural = '通知阅读记录'
+
+    def __str__(self):
+        return f"{self.user_id}-{self.notification_id}"
+
+
 
 # 协议合同配置（全局单条）
 class ContractSetting(models.Model):

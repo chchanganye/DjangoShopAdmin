@@ -32,6 +32,9 @@ from wxcloudrun.views.miniapp import (
     contract_image,
     contract_signature_status,
     contract_signature_update,
+    notifications_list,
+    notifications_unread_count,
+    notification_detail,
 )
 
 # 管理员视图
@@ -71,5 +74,6 @@ from wxcloudrun.views.admin import (
     admin_orders,
     admin_reviews,
     admin_review_delete,
+    admin_notifications,
 )
 

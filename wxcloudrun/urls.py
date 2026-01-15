@@ -47,6 +47,9 @@ from wxcloudrun.views import (
     contract_signature_update,
     contact_info,
     feedback_handler,
+    notifications_list,
+    notifications_unread_count,
+    notification_detail,
 )
 from wxcloudrun import views  # 管理员视图
 from django.urls import re_path as url
@@ -107,6 +110,10 @@ urlpatterns = (
     url(r'^api/contact/?$', contact_info),
     # 意见反馈（提交/记录）
     url(r'^api/feedback/?$', feedback_handler),
+    # ????
+    url(r'^api/notifications/?$', notifications_list),
+    url(r'^api/notifications/unread-count/?$', notifications_unread_count),
+    url(r'^api/notifications/(?P<notification_id>\d+)/?$', notification_detail),
 
     # ========== 管理员端接口 ==========
     
@@ -176,5 +183,7 @@ urlpatterns = (
     # 管理员-联系我们配置
     url(r'^api/admin/contact/?$', views.admin_contact_info),                        # GET/PUT
     # 管理员-意见反馈
-    url(r'^api/admin/feedbacks/?$', views.admin_feedbacks),                         # GET
+    url(r'^api/admin/feedbacks/?$', views.admin_feedbacks),
+    # ???????
+    url(r'^api/admin/notifications/?$', views.admin_notifications),                         # GET
 )

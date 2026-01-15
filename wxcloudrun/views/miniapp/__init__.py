@@ -31,6 +31,11 @@ from wxcloudrun.views.miniapp.signature import contract_signature_status, contra
 from wxcloudrun.views.miniapp.user import user_set_active_identity
 from wxcloudrun.views.miniapp.contact import contact_info
 from wxcloudrun.views.miniapp.feedback import feedback_handler
+from wxcloudrun.views.miniapp.notifications import (
+    notifications_list,
+    notifications_unread_count,
+    notification_detail,
+)
 
 __all__ = [
     'user_login',
@@ -64,4 +69,7 @@ __all__ = [
     'user_set_active_identity',
     'contact_info',
     'feedback_handler',
+    'notifications_list',
+    'notifications_unread_count',
+    'notification_detail',
 ]
