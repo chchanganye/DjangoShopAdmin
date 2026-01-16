@@ -75,5 +75,6 @@ from wxcloudrun.views.admin import (
     admin_reviews,
     admin_review_delete,
     admin_notifications,
+    admin_notification_detail,
 )
 

@@ -186,4 +186,5 @@ urlpatterns = (
     url(r'^api/admin/feedbacks/?$', views.admin_feedbacks),
     # ???????
     url(r'^api/admin/notifications/?$', views.admin_notifications),                         # GET
+    url(r'^api/admin/notifications/(?P<notification_id>\d+)/?$', views.admin_notification_detail),
 )

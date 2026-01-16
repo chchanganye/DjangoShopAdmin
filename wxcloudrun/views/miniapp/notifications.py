@@ -10,7 +10,9 @@ from django.views.decorators.http import require_http_methods
 
 from wxcloudrun.decorators import openid_required
 from wxcloudrun.models import Notification, NotificationRead, UserInfo
+from wxcloudrun.services.storage_service import get_temp_file_urls
 from wxcloudrun.utils.auth import get_openid
+from wxcloudrun.utils.notification_content import dedupe_file_ids, extract_image_file_ids, render_content
 from wxcloudrun.utils.responses import json_ok, json_err
 
 
@@ -171,10 +173,14 @@ def notification_detail(request, notification_id):
         read_record.read_at = datetime.now()
         read_record.save()
 
+    file_ids = dedupe_file_ids(extract_image_file_ids(notice.content))
+    temp_urls = get_temp_file_urls(file_ids) if file_ids else {}
+    content_html = render_content(notice.content, temp_urls)
+
     return json_ok({
         'id': notice.id,
         'title': notice.title,
-        'content_html': notice.content,
+        'content_html': content_html,
         'created_at': _format_dt(notice.created_at),
         'read_at': _format_dt(read_record.read_at),
     })
