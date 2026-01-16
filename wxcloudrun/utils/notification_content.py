@@ -8,6 +8,8 @@ from typing import Iterable
 IMG_TAG_RE = re.compile(r'<img\b[^>]*>', re.IGNORECASE)
 SRC_RE = re.compile(r'\bsrc=["\']([^"\']+)["\']', re.IGNORECASE)
 DATA_FILE_RE = re.compile(r'\bdata-file-id=["\']([^"\']+)["\']', re.IGNORECASE)
+DATA_FILE_SHORT_RE = re.compile(r'\bdata-fileid=["\']([^"\']+)["\']', re.IGNORECASE)
+ALT_RE = re.compile(r'\balt=["\']([^"\']*)["\']', re.IGNORECASE)
 
 
 def _get_attr(match_re: re.Pattern, tag: str) -> str:
@@ -30,17 +32,29 @@ def _ensure_src(tag: str, value: str) -> str:
     return _ensure_attr(tag, 'src', value)
 
 
+def _pick_file_id(tag: str) -> str:
+    data_file_id = _get_attr(DATA_FILE_RE, tag)
+    if data_file_id and data_file_id.startswith('cloud://'):
+        return data_file_id
+    data_file_id = _get_attr(DATA_FILE_SHORT_RE, tag)
+    if data_file_id and data_file_id.startswith('cloud://'):
+        return data_file_id
+    alt = _get_attr(ALT_RE, tag)
+    if alt and alt.startswith('cloud://'):
+        return alt
+    src = _get_attr(SRC_RE, tag)
+    if src and src.startswith('cloud://'):
+        return src
+    return ''
+
+
 def extract_image_file_ids(content: str) -> list[str]:
     """Collect cloud file ids from <img> tags."""
     file_ids: list[str] = []
     for tag in IMG_TAG_RE.findall(content or ''):
-        data_file_id = _get_attr(DATA_FILE_RE, tag)
-        if data_file_id and data_file_id.startswith('cloud://'):
-            file_ids.append(data_file_id)
-            continue
-        src = _get_attr(SRC_RE, tag)
-        if src and src.startswith('cloud://'):
-            file_ids.append(src)
+        file_id = _pick_file_id(tag)
+        if file_id:
+            file_ids.append(file_id)
     return file_ids
 
 
@@ -48,16 +62,12 @@ def normalize_content(content: str) -> str:
     """Replace image src with cloud file id when data-file-id is present."""
     def _replace(match: re.Match) -> str:
         tag = match.group(0)
-        data_file_id = _get_attr(DATA_FILE_RE, tag)
-        src = _get_attr(SRC_RE, tag)
-        file_id = ''
-        if data_file_id and data_file_id.startswith('cloud://'):
-            file_id = data_file_id
-        elif src and src.startswith('cloud://'):
-            file_id = src
+        file_id = _pick_file_id(tag)
         if not file_id:
             return tag
         tag = _ensure_attr(tag, 'data-file-id', file_id)
+        tag = _ensure_attr(tag, 'data-fileid', file_id)
+        tag = _ensure_attr(tag, 'alt', file_id)
         return _ensure_src(tag, file_id)
 
     return IMG_TAG_RE.sub(_replace, content or '')
@@ -67,19 +77,15 @@ def render_content(content: str, url_map: dict[str, str]) -> str:
     """Replace image src with temp url and keep data-file-id."""
     def _replace(match: re.Match) -> str:
         tag = match.group(0)
-        data_file_id = _get_attr(DATA_FILE_RE, tag)
-        src = _get_attr(SRC_RE, tag)
-        file_id = ''
-        if data_file_id and data_file_id.startswith('cloud://'):
-            file_id = data_file_id
-        elif src and src.startswith('cloud://'):
-            file_id = src
+        file_id = _pick_file_id(tag)
         if not file_id:
             return tag
         temp_url = url_map.get(file_id)
         if not temp_url:
             return tag
         tag = _ensure_attr(tag, 'data-file-id', file_id)
+        tag = _ensure_attr(tag, 'data-fileid', file_id)
+        tag = _ensure_attr(tag, 'alt', file_id)
         return _ensure_src(tag, temp_url)
 
     return IMG_TAG_RE.sub(_replace, content or '')
