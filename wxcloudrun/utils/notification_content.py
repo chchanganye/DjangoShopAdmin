@@ -9,6 +9,8 @@ IMG_TAG_RE = re.compile(r'<img\b[^>]*>', re.IGNORECASE)
 SRC_RE = re.compile(r'\bsrc=["\']([^"\']+)["\']', re.IGNORECASE)
 DATA_FILE_RE = re.compile(r'\bdata-file-id=["\']([^"\']+)["\']', re.IGNORECASE)
 DATA_FILE_SHORT_RE = re.compile(r'\bdata-fileid=["\']([^"\']+)["\']', re.IGNORECASE)
+DATA_HREF_RE = re.compile(r'\bdata-href=["\']([^"\']+)["\']', re.IGNORECASE)
+HREF_RE = re.compile(r'\bhref=["\']([^"\']+)["\']', re.IGNORECASE)
 ALT_RE = re.compile(r'\balt=["\']([^"\']*)["\']', re.IGNORECASE)
 
 
@@ -39,6 +41,12 @@ def _pick_file_id(tag: str) -> str:
     data_file_id = _get_attr(DATA_FILE_SHORT_RE, tag)
     if data_file_id and data_file_id.startswith('cloud://'):
         return data_file_id
+    data_href = _get_attr(DATA_HREF_RE, tag)
+    if data_href and data_href.startswith('cloud://'):
+        return data_href
+    href = _get_attr(HREF_RE, tag)
+    if href and href.startswith('cloud://'):
+        return href
     alt = _get_attr(ALT_RE, tag)
     if alt and alt.startswith('cloud://'):
         return alt
@@ -67,6 +75,7 @@ def normalize_content(content: str) -> str:
             return tag
         tag = _ensure_attr(tag, 'data-file-id', file_id)
         tag = _ensure_attr(tag, 'data-fileid', file_id)
+        tag = _ensure_attr(tag, 'data-href', file_id)
         tag = _ensure_attr(tag, 'alt', file_id)
         return _ensure_src(tag, file_id)
 
@@ -85,6 +94,7 @@ def render_content(content: str, url_map: dict[str, str]) -> str:
             return tag
         tag = _ensure_attr(tag, 'data-file-id', file_id)
         tag = _ensure_attr(tag, 'data-fileid', file_id)
+        tag = _ensure_attr(tag, 'data-href', file_id)
         tag = _ensure_attr(tag, 'alt', file_id)
         return _ensure_src(tag, temp_url)
 
