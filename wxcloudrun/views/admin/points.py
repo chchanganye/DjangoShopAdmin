@@ -1,8 +1,9 @@
 """管理员积分管理视图"""
 import json
 import logging
+from datetime import datetime, date, time
 from django.views.decorators.http import require_http_methods
-from django.db.models import Q
+from django.db.models import Q, Sum
 
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
@@ -62,6 +63,25 @@ def admin_share_setting(request, admin):
 @admin_token_required
 @require_http_methods(["GET"])
 def admin_points_records(request, admin):
+    def parse_datetime_param(value: str, *, is_end: bool = False):
+        if not value:
+            return None
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+            if dt.tzinfo:
+                dt = dt.replace(tzinfo=None)
+            return dt
+        except ValueError:
+            pass
+        try:
+            d = date.fromisoformat(raw)
+        except ValueError:
+            return None
+        return datetime.combine(d, time.max if is_end else time.min)
+
     def build_source_text(record: PointsRecord) -> str:
         source_type = getattr(record, 'source_type', '') or ''
         meta = getattr(record, 'source_meta', None) or {}
@@ -131,6 +151,8 @@ def admin_points_records(request, admin):
     keyword = (request.GET.get('keyword') or '').strip()
     identity_type = (request.GET.get('identity_type') or '').strip().upper()
     source_type = (request.GET.get('source_type') or '').strip()
+    start_date_raw = request.GET.get('start_date') or request.GET.get('start_time') or request.GET.get('start')
+    end_date_raw = request.GET.get('end_date') or request.GET.get('end_time') or request.GET.get('end')
 
     page = 1
     page_size = 20
@@ -168,6 +190,39 @@ def admin_points_records(request, admin):
     if source_type:
         qs = qs.filter(source_type=source_type)
 
+    if start_date_raw or end_date_raw:
+        start_dt = parse_datetime_param(start_date_raw) if start_date_raw else None
+        end_dt = parse_datetime_param(end_date_raw, is_end=True) if end_date_raw else None
+        if (start_date_raw and not start_dt) or (end_date_raw and not end_dt):
+            return json_err('时间格式错误，使用 YYYY-MM-DD 或 YYYY-MM-DD HH:mm:ss', status=400)
+        if start_dt and end_dt and start_dt > end_dt:
+            return json_err('start_date 不能大于 end_date', status=400)
+        if start_dt:
+            qs = qs.filter(created_at__gte=start_dt)
+        if end_dt:
+            qs = qs.filter(created_at__lte=end_dt)
+
+    now = datetime.now()
+    today = now.date()
+    consumed_qs = qs.filter(change__lt=0)
+
+    def _sum_abs(queryset):
+        value = queryset.aggregate(total=Sum('change')).get('total') or 0
+        try:
+            return abs(int(value))
+        except (TypeError, ValueError):
+            try:
+                return abs(int(float(value)))
+            except (TypeError, ValueError):
+                return 0
+
+    summary = {
+        'consumed_total': _sum_abs(consumed_qs),
+        'consumed_today': _sum_abs(consumed_qs.filter(created_at__date=today)),
+        'consumed_month': _sum_abs(consumed_qs.filter(created_at__year=now.year, created_at__month=now.month)),
+        'consumed_year': _sum_abs(consumed_qs.filter(created_at__year=now.year)),
+    }
+
     total = qs.count()
     start = (page - 1) * page_size
     records = list(qs[start : start + page_size])
@@ -189,7 +244,7 @@ def admin_points_records(request, admin):
             'source_text': build_source_text(record),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    return json_ok({'list': items, 'total': total})
+    return json_ok({'list': items, 'total': total, 'summary': summary})
 
 
 @admin_token_required
