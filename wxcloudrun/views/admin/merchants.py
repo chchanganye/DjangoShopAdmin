@@ -7,7 +7,7 @@ from django.views.decorators.http import require_http_methods
 from wxcloudrun.decorators import admin_token_required
 from wxcloudrun.utils.responses import json_ok, json_err
 from wxcloudrun.exceptions import WxOpenApiError
-from wxcloudrun.models import Category, UserInfo, MerchantProfile
+from wxcloudrun.models import Category, UserInfo, MerchantProfile, UserAssignedIdentity
 from wxcloudrun.services.points_service import get_points_account
 from wxcloudrun.services.storage_service import get_temp_file_urls, delete_cloud_files
 
@@ -143,8 +143,6 @@ def admin_merchants_detail(request, admin, openid):
     """商户管理 - PUT更新 / DELETE删除（使用 openid）"""
     try:
         user = UserInfo.objects.get(openid=openid)
-        if user.active_identity != 'MERCHANT':
-            return json_err('该用户不是商户身份', status=400)
     except UserInfo.DoesNotExist:
         return json_err('用户不存在', status=404)
     
@@ -171,6 +169,20 @@ def admin_merchants_detail(request, admin, openid):
             except WxOpenApiError as exc:
                 logger.warning(f"删除商户营业执照文件失败: {merchant.business_license_file_id}, error={exc}")
         merchant.delete()
+        # 撤销商户身份，避免仍可切换为商户
+        try:
+            UserAssignedIdentity.objects.filter(user=user, identity_type='MERCHANT').delete()
+        except Exception as exc:
+            logger.warning(f"撤销商户身份失败: openid={openid}, error={exc}")
+        try:
+            UserAssignedIdentity.objects.get_or_create(user=user, identity_type='OWNER')
+        except Exception as exc:
+            logger.warning(f"确保 OWNER 身份失败: openid={openid}, error={exc}")
+        if user.active_identity == 'MERCHANT':
+            user.active_identity = 'OWNER'
+            if user.identity_type == 'MERCHANT':
+                user.identity_type = 'OWNER'
+            user.save()
         return json_ok({'openid': openid, 'deleted': True})
     
     # PUT 更新
