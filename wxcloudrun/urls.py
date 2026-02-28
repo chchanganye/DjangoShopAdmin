@@ -158,6 +158,7 @@ urlpatterns = (
 
     # 管理员-积分变更记录查询
     url(r'^api/admin/points-records/?$', views.admin_points_records),          # GET
+    url(r'^api/admin/points-records/(?P<record_id>\d+)/?$', views.admin_points_record_delete),  # DELETE
     # 管理员-折扣店积分兑换记录
     url(r'^api/admin/discount-redeem-records/?$', views.admin_discount_redeem_records),  # GET
 

@@ -6,7 +6,12 @@ from wxcloudrun.views.admin.properties import admin_properties, admin_properties
 from wxcloudrun.views.admin.communities import admin_communities, admin_communities_detail
 from wxcloudrun.views.admin.users import admin_users, admin_users_detail
 from wxcloudrun.views.admin.storage import admin_storage_upload_credential, admin_storage_delete_files
-from wxcloudrun.views.admin.points import admin_share_setting, admin_points_records, admin_discount_redeem_records
+from wxcloudrun.views.admin.points import (
+    admin_share_setting,
+    admin_points_records,
+    admin_points_record_delete,
+    admin_discount_redeem_records,
+)
 from wxcloudrun.views.admin.applications import (
     admin_applications_list,
     admin_application_approve,
@@ -38,6 +43,7 @@ __all__ = [
     'admin_storage_delete_files',
     'admin_share_setting',
     'admin_points_records',
+    'admin_points_record_delete',
     'admin_discount_redeem_records',
     'admin_applications_list',
     'admin_application_approve',

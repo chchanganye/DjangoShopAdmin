@@ -204,7 +204,7 @@ def admin_points_records(request, admin):
 
     now = datetime.now()
     today = now.date()
-    consumed_qs = qs.filter(change__lt=0)
+    merchant_settlement_qs = qs.filter(source_type='MERCHANT_SETTLEMENT', change__gt=0)
 
     def _sum_abs(queryset):
         value = queryset.aggregate(total=Sum('change')).get('total') or 0
@@ -217,10 +217,13 @@ def admin_points_records(request, admin):
                 return 0
 
     summary = {
-        'consumed_total': _sum_abs(consumed_qs),
-        'consumed_today': _sum_abs(consumed_qs.filter(created_at__date=today)),
-        'consumed_month': _sum_abs(consumed_qs.filter(created_at__year=now.year, created_at__month=now.month)),
-        'consumed_year': _sum_abs(consumed_qs.filter(created_at__year=now.year)),
+        # 只统计“绿色的商户结算正向积分”
+        'merchant_settlement_total': _sum_abs(merchant_settlement_qs),
+        'merchant_settlement_today': _sum_abs(merchant_settlement_qs.filter(created_at__date=today)),
+        'merchant_settlement_month': _sum_abs(
+            merchant_settlement_qs.filter(created_at__year=now.year, created_at__month=now.month)
+        ),
+        'merchant_settlement_year': _sum_abs(merchant_settlement_qs.filter(created_at__year=now.year)),
     }
 
     total = qs.count()
@@ -244,7 +247,25 @@ def admin_points_records(request, admin):
             'source_text': build_source_text(record),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    return json_ok({'list': items, 'total': total, 'summary': summary})
+    return json_ok({'list': items, 'total': total, 'current': page, 'size': page_size, 'summary': summary})
+
+
+@admin_token_required
+@require_http_methods(["DELETE"])
+def admin_points_record_delete(request, admin, record_id):
+    """删除单条积分记录（仅删除记录，不回滚账户余额）"""
+    try:
+        rid = int(record_id)
+    except (TypeError, ValueError):
+        return json_err('record_id 必须为数字', status=400)
+
+    try:
+        record = PointsRecord.objects.get(id=rid)
+    except PointsRecord.DoesNotExist:
+        return json_err('积分记录不存在', status=404)
+
+    record.delete()
+    return json_ok({'id': rid, 'deleted': True})
 
 
 @admin_token_required

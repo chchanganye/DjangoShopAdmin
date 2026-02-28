@@ -55,6 +55,7 @@ from wxcloudrun.views.admin import (
     admin_storage_delete_files,
     admin_share_setting,
     admin_points_records,
+    admin_points_record_delete,
     admin_discount_redeem_records,
     admin_applications_list,
     admin_application_approve,
