@@ -216,14 +216,19 @@ def admin_points_records(request, admin):
             except (TypeError, ValueError):
                 return 0
 
+    merchant_settlement_total = _sum_abs(merchant_settlement_qs)
+    merchant_settlement_today = _sum_abs(merchant_settlement_qs.filter(created_at__date=today))
+    merchant_settlement_month = _sum_abs(
+        merchant_settlement_qs.filter(created_at__year=now.year, created_at__month=now.month)
+    )
+    merchant_settlement_year = _sum_abs(merchant_settlement_qs.filter(created_at__year=now.year))
+
     summary = {
         # 只统计“绿色的商户结算正向积分”
-        'merchant_settlement_total': _sum_abs(merchant_settlement_qs),
-        'merchant_settlement_today': _sum_abs(merchant_settlement_qs.filter(created_at__date=today)),
-        'merchant_settlement_month': _sum_abs(
-            merchant_settlement_qs.filter(created_at__year=now.year, created_at__month=now.month)
-        ),
-        'merchant_settlement_year': _sum_abs(merchant_settlement_qs.filter(created_at__year=now.year)),
+        'merchant_settlement_total': merchant_settlement_total,
+        'merchant_settlement_today': merchant_settlement_today,
+        'merchant_settlement_month': merchant_settlement_month,
+        'merchant_settlement_year': merchant_settlement_year,
     }
 
     total = qs.count()
@@ -247,7 +252,13 @@ def admin_points_records(request, admin):
             'source_text': build_source_text(record),
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
         })
-    return json_ok({'list': items, 'total': total, 'current': page, 'size': page_size, 'summary': summary})
+    return json_ok({
+        'list': items,
+        'total': int(total),
+        'current': page,
+        'size': page_size,
+        'summary': summary,
+    })
 
 
 @admin_token_required
