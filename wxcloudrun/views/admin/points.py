@@ -204,7 +204,16 @@ def admin_points_records(request, admin):
 
     now = datetime.now()
     today = now.date()
-    merchant_settlement_qs = qs.filter(source_type='MERCHANT_SETTLEMENT', change__gt=0)
+    merchant_settlement_qs = qs.filter(
+        identity_type='MERCHANT',
+        source_type='MERCHANT_SETTLEMENT',
+        change__gt=0,
+    )
+    owner_settlement_qs = qs.filter(
+        identity_type='OWNER',
+        source_type='OWNER_SETTLEMENT',
+        change__gt=0,
+    )
 
     def _sum_abs(queryset):
         value = queryset.aggregate(total=Sum('change')).get('total') or 0
@@ -222,6 +231,12 @@ def admin_points_records(request, admin):
         merchant_settlement_qs.filter(created_at__year=now.year, created_at__month=now.month)
     )
     merchant_settlement_year = _sum_abs(merchant_settlement_qs.filter(created_at__year=now.year))
+    owner_settlement_total = _sum_abs(owner_settlement_qs)
+    owner_settlement_today = _sum_abs(owner_settlement_qs.filter(created_at__date=today))
+    owner_settlement_month = _sum_abs(
+        owner_settlement_qs.filter(created_at__year=now.year, created_at__month=now.month)
+    )
+    owner_settlement_year = _sum_abs(owner_settlement_qs.filter(created_at__year=now.year))
 
     summary = {
         # 只统计“绿色的商户结算正向积分”
@@ -229,6 +244,10 @@ def admin_points_records(request, admin):
         'merchant_settlement_today': merchant_settlement_today,
         'merchant_settlement_month': merchant_settlement_month,
         'merchant_settlement_year': merchant_settlement_year,
+        'owner_settlement_total': owner_settlement_total,
+        'owner_settlement_today': owner_settlement_today,
+        'owner_settlement_month': owner_settlement_month,
+        'owner_settlement_year': owner_settlement_year,
     }
 
     total = qs.count()
