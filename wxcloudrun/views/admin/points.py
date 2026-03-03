@@ -204,15 +204,19 @@ def admin_points_records(request, admin):
 
     now = datetime.now()
     today = now.date()
+    # 商户结算积分：仅统计商户侧入账（优先按 direction，再兼容 identity_type）
     merchant_settlement_qs = qs.filter(
-        identity_type='MERCHANT',
         source_type='MERCHANT_SETTLEMENT',
         change__gt=0,
+    ).filter(
+        Q(source_meta__direction='merchant_credit') | Q(identity_type='MERCHANT')
     )
-    owner_settlement_qs = qs.filter(
-        identity_type='OWNER',
-        source_type='OWNER_SETTLEMENT',
-        change__gt=0,
+
+    # 业主结算积分：统计业主侧入账（商户结算给业主 + 历史 OWNER_SETTLEMENT）
+    owner_settlement_qs = qs.filter(change__gt=0).filter(
+        Q(source_type='MERCHANT_SETTLEMENT', source_meta__direction='owner_credit')
+        | Q(source_type='MERCHANT_SETTLEMENT', identity_type='OWNER')
+        | Q(source_type='OWNER_SETTLEMENT', identity_type='OWNER')
     )
 
     def _sum_abs(queryset):
